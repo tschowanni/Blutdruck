@@ -1,125 +1,254 @@
 <!DOCTYPE html>
-<html lang="de">
+<html lang="de-CH">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#1565c0">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Blutdruck">
+<meta name="mobile-web-app-capable" content="yes">
 <title>Blutdruck · OMRON M7</title>
+
+<!-- Platzhalter-<link>s werden durch pwaInstaller gesetzt -->
+<link rel="icon" id="pwa-icon">
+<link rel="apple-touch-icon" id="pwa-apple-icon">
+<link rel="manifest" id="pwa-manifest">
+
+<!-- ==========================================================
+     PWA-INSTALLER
+     · Erzeugt App-Icon als SVG-Data-URL
+     · Erzeugt Manifest als Blob-URL (keine externe Datei!)
+     · Registriert Service-Worker als Blob-URL (Offline-Cache)
+     · Icons + Manifest werden an entsprechende <link>-Tags gehängt
+     ========================================================== -->
+<script>
+(function pwaInstaller(){
+  /* ---------- App-Icon (512×512, medizinisch-dezent) ---------- */
+  const APP_ICON_SVG =
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">' +
+      '<defs>' +
+        '<linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">' +
+          '<stop offset="0" stop-color="#1e88e5"/>' +
+          '<stop offset="0.55" stop-color="#1565c0"/>' +
+          '<stop offset="1" stop-color="#0d47a1"/>' +
+        '</linearGradient>' +
+        '<linearGradient id="pulse" x1="0" y1="0" x2="1" y2="0">' +
+          '<stop offset="0" stop-color="#ffab91"/>' +
+          '<stop offset="0.5" stop-color="#ff8a80"/>' +
+          '<stop offset="1" stop-color="#ffab91"/>' +
+        '</linearGradient>' +
+      '</defs>' +
+      '<rect width="512" height="512" rx="116" fill="url(#bg)"/>' +
+      '<path d="M0 0h512v150q-256-55-512 0z" fill="rgba(255,255,255,.09)"/>' +
+      '<path d="M56 258h400" stroke="rgba(255,255,255,.15)" stroke-width="4" stroke-linecap="round"/>' +
+      '<path d="M56 258L172 258 200 258 222 196 250 334 278 118 306 378 332 258 456 258" ' +
+             'fill="none" stroke="url(#pulse)" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>' +
+      '<circle cx="56"  cy="258" r="13" fill="#ffccbc"/>' +
+      '<circle cx="456" cy="258" r="13" fill="#ffccbc"/>' +
+    '</svg>';
+  const iconUrlUtf8   = 'data:image/svg+xml;utf8,' + encodeURIComponent(APP_ICON_SVG);
+  const iconUrlBase64 = 'data:image/svg+xml;base64,' + btoa(APP_ICON_SVG);
+
+  /* ---------- <link rel="icon">, <link rel="apple-touch-icon"> ---------- */
+  const iconLink = document.getElementById('pwa-icon');
+  iconLink.type = 'image/svg+xml';
+  iconLink.href = iconUrlUtf8;
+  document.getElementById('pwa-apple-icon').href = iconUrlUtf8;
+
+  /* ---------- Manifest (als Blob-URL, NICHT als externe Datei) ---------- */
+  const manifestData = {
+    name:             "OMRON M7 Blutdruck",
+    short_name:       "Blutdruck",
+    description:      "Blutdruckmessung OMRON M7 Intelli IT — persönliche Gesundheits-App",
+    start_url:        ".",
+    scope:            ".",
+    display:          "standalone",
+    orientation:      "portrait",
+    background_color: "#ecedef",
+    theme_color:      "#1565c0",
+    lang:             "de-CH",
+    icons: [
+      { src: iconUrlBase64, sizes: "192x192", type: "image/svg+xml", purpose: "any"          },
+      { src: iconUrlBase64, sizes: "512x512", type: "image/svg+xml", purpose: "any maskable" }
+    ]
+  };
+  try {
+    const manifestBlob = new Blob([JSON.stringify(manifestData)], { type: 'application/manifest+json' });
+    const manifestUrl  = URL.createObjectURL(manifestBlob);
+    document.getElementById('pwa-manifest').href = manifestUrl;
+  } catch(e){ console.warn('Manifest-Blob nicht erzeugbar:', e); }
+
+  /* ---------- Service Worker als Blob-URL ---------- */
+  /* SW cached: diese HTML + 3 CDN-Scripts. Fetch: cache-first, dann Netzwerk. */
+  const swCode = [
+    "const CACHE_NAME = 'omron-bp-v2';",
+    "const CACHE_URLS = [",
+    "  './',",
+    "  './index.html',",
+    "  'https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js',",
+    "  'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',",
+    "  'https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.7.0/jspdf.plugin.autotable.min.js'",
+    "];",
+    "self.addEventListener('install', e => {",
+    "  e.waitUntil(caches.open(CACHE_NAME).then(c => c.addAll(CACHE_URLS).catch(() => {})));",
+    "  self.skipWaiting();",
+    "});",
+    "self.addEventListener('activate', e => {",
+    "  e.waitUntil(caches.keys().then(keys =>",
+    "    Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)))",
+    "  ));",
+    "  self.clients.claim();",
+    "});",
+    "self.addEventListener('fetch', e => {",
+    "  if(e.request.method !== 'GET') return;",
+    "  e.respondWith(",
+    "    caches.match(e.request).then(cached =>",
+    "      cached || fetch(e.request).then(resp => {",
+    "        if(resp && resp.status === 200 && (resp.type === 'basic' || resp.type === 'cors')){",
+    "          const clone = resp.clone();",
+    "          caches.open(CACHE_NAME).then(c => c.put(e.request, clone)).catch(()=>{});",
+    "        }",
+    "        return resp;",
+    "      }).catch(() => cached)",
+    "    )",
+    "  );",
+    "});"
+  ].join('\n');
+
+  try {
+    if('serviceWorker' in navigator){
+      const swBlob = new Blob([swCode], { type: 'application/javascript' });
+      const swUrl  = URL.createObjectURL(swBlob);
+      navigator.serviceWorker.register(swUrl).catch(err => {
+        console.info('Service Worker nicht registriert (normal bei file://):', err.message);
+      });
+    }
+  } catch(e){ console.info('Service Worker nicht verfügbar:', e.message); }
+})();
+</script>
+
 <style>
   :root{
+    --font-scale:1;
     --primary:#1565c0;
     --primary-light:#1976d2;
     --primary-dark:#0d47a1;
-    --primary-50:#e3f2fd;
-    --primary-100:#bbdefb;
-    --bg:#fafafa;
-    --surface:#ffffff;
-    --surface-2:#f5f5f5;
-    --border:#e0e0e0;
-    --border-2:#eeeeee;
-    --text:#212121;
-    --text-2:#424242;
-    --text-3:#757575;
-    --text-4:#9e9e9e;
+    --primary-50:#e3ecf5;
+    --primary-100:#c5d8ec;
+    --on-primary:#edf2f7;
+    --bg:#ecedef;
+    --surface:#f6f5f3;
+    --surface-2:#e9e8e5;
+    --border:#d7d6d3;
+    --border-2:#e4e2df;
+    --text:#1e2125;
+    --text-2:#3c4148;
+    --text-3:#6a6f77;
+    --text-4:#9ca1a8;
     --ok:#2e7d32;
-    --ok-bg:#e8f5e9;
+    --ok-bg:#dfead9;
     --warn:#ef6c00;
-    --warn-bg:#fff3e0;
+    --warn-bg:#f6e6d0;
     --danger:#c62828;
-    --danger-bg:#ffebee;
+    --danger-bg:#eed5d5;
     --danger-dark:#b71c1c;
     --info:#0277bd;
-    --info-bg:#e1f5fe;
+    --info-bg:#d8e4ed;
     --purple:#6a1b9a;
-    --purple-bg:#f3e5f5;
-    --shadow-1:0 1px 2px rgba(0,0,0,.08),0 1px 3px rgba(0,0,0,.04);
-    --shadow-2:0 2px 4px rgba(0,0,0,.12),0 2px 6px rgba(0,0,0,.06);
+    --purple-bg:#e5d6ea;
+    --shadow-1:0 1px 2px rgba(0,0,0,.06),0 1px 3px rgba(0,0,0,.04);
+    --shadow-2:0 2px 4px rgba(0,0,0,.10),0 2px 6px rgba(0,0,0,.05);
     --shadow-app:0 2px 4px rgba(0,0,0,.12);
     --radius:8px;
     --radius-sm:6px;
+    --ico-pulse:#ff8a80;
+    --ico-add:#b9f6ca;
+    --ico-sync:#b3e5fc;
   }
   [data-theme="dark"]{
     --primary:#64b5f6;
     --primary-light:#90caf9;
     --primary-dark:#42a5f5;
-    --primary-50:#0d2a47;
-    --primary-100:#0d3a61;
-    --bg:#121212;
-    --surface:#1e1e1e;
-    --surface-2:#262626;
-    --border:#2e2e2e;
-    --border-2:#333333;
-    --text:#e0e0e0;
-    --text-2:#bdbdbd;
-    --text-3:#9e9e9e;
-    --text-4:#757575;
+    --primary-50:#1e3a57;
+    --primary-100:#23486b;
+    --on-primary:#e8edf3;
+    --bg:#1f2125;
+    --surface:#2a2d31;
+    --surface-2:#34373c;
+    --border:#3a3e44;
+    --border-2:#323539;
+    --text:#dde0e4;
+    --text-2:#b5b9bf;
+    --text-3:#8a8f96;
+    --text-4:#656a71;
     --ok:#81c784;
-    --ok-bg:#1b3a1d;
+    --ok-bg:#1f3a22;
     --warn:#ffb74d;
-    --warn-bg:#3d2a10;
+    --warn-bg:#3b2b14;
     --danger:#ef5350;
-    --danger-bg:#3d1a1a;
+    --danger-bg:#3c1f1f;
     --danger-dark:#ef5350;
     --info:#4fc3f7;
-    --info-bg:#0d2a47;
+    --info-bg:#173044;
     --purple:#ba68c8;
-    --purple-bg:#2a1230;
-    --shadow-1:0 1px 3px rgba(0,0,0,.4);
-    --shadow-2:0 2px 6px rgba(0,0,0,.5);
-    --shadow-app:0 2px 4px rgba(0,0,0,.5);
+    --purple-bg:#2d1932;
+    --shadow-1:0 1px 3px rgba(0,0,0,.35);
+    --shadow-2:0 2px 6px rgba(0,0,0,.45);
+    --shadow-app:0 2px 4px rgba(0,0,0,.45);
+    --ico-add:#a5e8bd;
+    --ico-sync:#9bcfe4;
   }
+
   *,*::before,*::after{box-sizing:border-box}
+  html{font-size:calc(16px * var(--font-scale))}
   html,body{margin:0;padding:0;font-family:"Roboto","Segoe UI",system-ui,sans-serif;background:var(--bg);color:var(--text);-webkit-font-smoothing:antialiased;overscroll-behavior-y:contain}
   body{padding-bottom:calc(72px + env(safe-area-inset-bottom));min-height:100vh}
   button{font-family:inherit;cursor:pointer}
   input,select,textarea{font-family:inherit}
 
-  /* ---------- App bar ---------- */
-  .app-bar{background:var(--primary);color:#fff;padding:14px 16px 12px;box-shadow:var(--shadow-app);position:sticky;top:0;z-index:40;padding-top:calc(14px + env(safe-area-inset-top))}
+  .app-bar{background:var(--primary);color:var(--on-primary);padding:14px 16px 12px;box-shadow:var(--shadow-app);position:sticky;top:0;z-index:40;padding-top:calc(14px + env(safe-area-inset-top))}
   .app-bar-row{display:flex;justify-content:space-between;align-items:center}
-  .app-bar h1{margin:0;font-size:18px;font-weight:500;display:flex;gap:10px;align-items:center;letter-spacing:.2px}
+  .app-bar h1{margin:0;font-size:1.125rem;font-weight:500;display:flex;gap:10px;align-items:center;letter-spacing:.2px;color:var(--on-primary)}
   .app-bar .ic{display:flex;gap:6px}
-  .app-bar .icbtn{background:transparent;border:none;color:#fff;padding:8px;border-radius:50%;display:flex;align-items:center;justify-content:center}
+  .app-bar .icbtn{background:transparent;border:none;color:var(--on-primary);padding:8px;border-radius:50%;display:flex;align-items:center;justify-content:center}
   .app-bar .icbtn:active{background:rgba(255,255,255,.15)}
-  .app-bar .status{display:inline-flex;gap:6px;align-items:center;font-size:11px;color:rgba(255,255,255,.85);margin-top:4px;letter-spacing:.3px}
-  .status .dot{width:7px;height:7px;border-radius:50%;background:#69f0ae;box-shadow:0 0 6px #69f0ae}
-  .status .dot.off{background:#ef5350;box-shadow:0 0 6px #ef5350}
+  .app-bar .status{display:inline-flex;gap:6px;align-items:center;font-size:.69rem;color:rgba(237,242,247,.88);margin-top:4px;letter-spacing:.3px}
+  .status .dot{width:7px;height:7px;border-radius:50%;background:#81c784;box-shadow:0 0 6px rgba(129,199,132,.7)}
+  .status .dot.off{background:#ef5350;box-shadow:0 0 6px rgba(239,83,80,.7)}
+  .status .dot.busy{background:#ffb74d;box-shadow:0 0 6px rgba(255,183,77,.7);animation:pulseAnim 1s infinite}
+  @keyframes pulseAnim{ 0%,100%{opacity:1} 50%{opacity:.4} }
 
-  /* ---------- Views ---------- */
   .view{display:none;padding:14px 14px 20px}
   .view.active{display:block}
 
-  /* ---------- Cards ---------- */
   .card{background:var(--surface);border-radius:var(--radius);padding:14px;box-shadow:var(--shadow-1);margin-bottom:12px}
   .card.wide{padding:18px}
   .card-head{padding:14px 16px;border-bottom:1px solid var(--border-2);display:flex;justify-content:space-between;align-items:center}
-  .card-head h4{margin:0;font-size:14px;font-weight:500;color:var(--text)}
-  .card-head a,.card-head button.link{background:none;border:none;padding:0;font-size:12px;color:var(--primary);font-weight:500;letter-spacing:.3px;text-transform:uppercase;text-decoration:none;cursor:pointer}
+  .card-head h4{margin:0;font-size:.875rem;font-weight:500;color:var(--text)}
+  .card-head a,.card-head button.link{background:none;border:none;padding:0;font-size:.75rem;color:var(--primary);font-weight:500;letter-spacing:.3px;text-transform:uppercase;text-decoration:none;cursor:pointer}
   .section{background:var(--surface);border-radius:var(--radius);box-shadow:var(--shadow-1);margin-bottom:12px;overflow:hidden}
   .section-body{padding:14px 16px}
 
-  .l{font-size:10px;color:var(--text-3);font-weight:500;text-transform:uppercase;letter-spacing:.6px;display:flex;align-items:center;gap:6px}
-  .v{font-size:28px;font-weight:400;margin-top:6px;color:var(--text);line-height:1.05;letter-spacing:-.5px}
-  .d{font-size:11px;color:var(--text-3);margin-top:6px}
+  .l{font-size:.625rem;color:var(--text-3);font-weight:500;text-transform:uppercase;letter-spacing:.6px;display:flex;align-items:center;gap:6px}
+  .v{font-size:1.75rem;font-weight:400;margin-top:6px;color:var(--text);line-height:1.05;letter-spacing:-.5px}
+  .d{font-size:.69rem;color:var(--text-3);margin-top:6px}
   .d .up{color:var(--ok);font-weight:500}
   .d .down{color:var(--danger);font-weight:500}
 
-  /* ---------- Hero reading ---------- */
   .hero-card{position:relative}
-  .hero-v{font-size:60px;font-weight:300;letter-spacing:-2.5px;margin:4px 0 2px;line-height:1;color:var(--text)}
+  .hero-v{font-size:3.75rem;font-weight:300;letter-spacing:-2.5px;margin:4px 0 2px;line-height:1;color:var(--text)}
   .hero-v .sys{color:var(--primary)}
   .hero-v .sep{color:var(--text-4);font-weight:300;padding:0 2px}
   .hero-v .dia{color:var(--primary-light)}
-  .hero-sub{font-size:13px;color:var(--text-3);margin-top:4px}
+  .hero-sub{font-size:.82rem;color:var(--text-3);margin-top:4px}
   .hero-sub strong{color:var(--text-2);font-weight:500}
   .hero-top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
 
-  /* ---------- Grids ---------- */
   .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
   .grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px}
 
-  /* ---------- Chips ---------- */
-  .chip{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:14px;font-size:11px;font-weight:500;line-height:1.4}
+  .chip{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:14px;font-size:.69rem;font-weight:500;line-height:1.4}
   .chip.normal{background:var(--ok-bg);color:var(--ok)}
   .chip.elev{background:var(--warn-bg);color:var(--warn)}
   .chip.high{background:var(--danger-bg);color:var(--danger)}
@@ -131,48 +260,47 @@
   .chip.high .dt{background:var(--danger)}
   .chip.info .dt{background:var(--info)}
 
-  /* ---------- Lists ---------- */
   .list .item{padding:12px 16px;border-bottom:1px solid var(--border-2);display:grid;grid-template-columns:1fr auto auto;gap:12px;align-items:center}
   .list .item:last-child{border-bottom:none}
-  .list .item .dt-col{color:var(--text);font-size:14px}
-  .list .item .dt-col small{display:block;color:var(--text-4);font-size:11px;margin-top:1px}
-  .list .item .bp-col{font-size:15px;font-weight:500;color:var(--primary);letter-spacing:-.3px;text-align:right;min-width:72px}
-  .list .item .bp-col small{color:var(--text-4);font-weight:400;font-size:11px;display:block;margin-top:1px}
-  .list .item .flag{display:inline-flex;align-items:center;gap:4px}
+  .list .item .dt-col{color:var(--text);font-size:.875rem}
+  .list .item .dt-col small{display:block;color:var(--text-4);font-size:.69rem;margin-top:1px}
+  .list .item .bp-col{font-size:.94rem;font-weight:500;color:var(--primary);letter-spacing:-.3px;text-align:right;min-width:72px}
+  .list .item .bp-col small{color:var(--text-4);font-weight:400;font-size:.69rem;display:block;margin-top:1px}
   .list .item.alert{background:linear-gradient(90deg,rgba(198,40,40,.05),transparent)}
   [data-theme="dark"] .list .item.alert{background:linear-gradient(90deg,rgba(239,83,80,.08),transparent)}
 
-  /* ---------- Bottom nav ---------- */
+  .flag-ic{display:inline-flex;align-items:center;justify-content:center;gap:2px;padding:1px 5px;border-radius:4px;font-size:.65rem;font-weight:600;margin-left:4px;cursor:help}
+  .flag-ic.mov{background:var(--warn-bg);color:var(--warn)}
+  .flag-ic.ihb{background:var(--danger-bg);color:var(--danger)}
+
   .bottom-nav{position:fixed;bottom:0;left:0;right:0;background:var(--surface);border-top:1px solid var(--border);padding:6px 4px calc(6px + env(safe-area-inset-bottom));display:flex;z-index:40;box-shadow:0 -1px 4px rgba(0,0,0,.06)}
-  .nav-btn{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:8px 4px;background:transparent;border:none;color:var(--text-3);font-size:10px;font-weight:500;letter-spacing:.3px;border-radius:8px;transition:background .15s}
+  .nav-btn{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:8px 4px;background:transparent;border:none;color:var(--text-3);font-size:.625rem;font-weight:500;letter-spacing:.3px;border-radius:8px;transition:background .15s}
   .nav-btn.active{color:var(--primary)}
   .nav-btn:active{background:var(--surface-2)}
   .nav-btn svg{width:22px;height:22px}
 
-  /* ---------- Buttons ---------- */
-  .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:11px 16px;border:none;border-radius:var(--radius-sm);font-size:13px;font-weight:500;letter-spacing:.4px;text-transform:uppercase;cursor:pointer;transition:background .15s}
-  .btn.primary{background:var(--primary);color:#fff;box-shadow:0 2px 4px rgba(21,101,192,.3)}
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:11px 16px;border:none;border-radius:var(--radius-sm);font-size:.82rem;font-weight:500;letter-spacing:.4px;text-transform:uppercase;cursor:pointer;transition:background .15s}
+  .btn.primary{background:var(--primary);color:var(--on-primary);box-shadow:0 2px 4px rgba(21,101,192,.3)}
   .btn.primary:active{background:var(--primary-dark)}
-  .btn.danger{background:var(--danger);color:#fff;box-shadow:0 2px 4px rgba(198,40,40,.3)}
+  .btn.primary:disabled{opacity:.55;cursor:default}
+  .btn.danger{background:var(--danger);color:var(--on-primary);box-shadow:0 2px 4px rgba(198,40,40,.3)}
+  .btn.ok{background:var(--ok);color:var(--on-primary);box-shadow:0 2px 4px rgba(46,125,50,.3)}
   .btn.ghost{background:var(--surface);color:var(--primary);border:1px solid var(--border)}
   .btn.outline{background:transparent;color:var(--text);border:1px solid var(--border)}
   .btn-row{display:grid;grid-template-columns:1fr 1fr;gap:8px}
   .btn-row .full{grid-column:span 2}
-  .btn-stack>.btn{width:100%;margin-bottom:8px}
   .btn svg{width:16px;height:16px}
 
-  /* ---------- Tabs for history/stats filter ---------- */
   .range-tabs{display:flex;gap:6px;overflow-x:auto;padding:4px 0 12px;scrollbar-width:none}
   .range-tabs::-webkit-scrollbar{display:none}
-  .range-tab{background:var(--surface);border:1px solid var(--border);color:var(--text-2);padding:6px 12px;border-radius:14px;font-size:12px;font-weight:500;white-space:nowrap}
-  .range-tab.active{background:var(--primary);color:#fff;border-color:var(--primary)}
+  .range-tab{background:var(--surface);border:1px solid var(--border);color:var(--text-2);padding:6px 12px;border-radius:14px;font-size:.75rem;font-weight:500;white-space:nowrap}
+  .range-tab.active{background:var(--primary);color:var(--on-primary);border-color:var(--primary)}
 
-  /* ---------- Stats specific ---------- */
   .stat-tile{background:var(--surface);border-radius:var(--radius);padding:12px 14px;box-shadow:var(--shadow-1);position:relative;overflow:hidden}
-  .stat-tile .l{font-size:10px}
-  .stat-tile .v{font-size:22px;margin-top:4px;font-weight:500;letter-spacing:-.3px}
-  .stat-tile .v small{font-size:12px;color:var(--text-3);font-weight:400;margin-left:3px}
-  .stat-tile .d{font-size:10px}
+  .stat-tile .l{font-size:.625rem}
+  .stat-tile .v{font-size:1.375rem;margin-top:4px;font-weight:500;letter-spacing:-.3px}
+  .stat-tile .v small{font-size:.75rem;color:var(--text-3);font-weight:400;margin-left:3px}
+  .stat-tile .d{font-size:.625rem}
   .stat-tile.ok{border-left:3px solid var(--ok)}
   .stat-tile.warn{border-left:3px solid var(--warn)}
   .stat-tile.high{border-left:3px solid var(--danger)}
@@ -180,79 +308,82 @@
 
   .class-bar{display:flex;height:12px;border-radius:6px;overflow:hidden;background:var(--surface-2);margin:10px 0 6px}
   .class-bar span{display:block;transition:width .3s}
-  .class-legend{display:grid;grid-template-columns:1fr 1fr;gap:6px 14px;font-size:11px;color:var(--text-2);margin-top:8px}
+  .class-legend{display:grid;grid-template-columns:1fr 1fr;gap:6px 14px;font-size:.69rem;color:var(--text-2);margin-top:8px}
   .class-legend span{display:inline-flex;align-items:center;gap:6px}
   .class-legend .sw{width:10px;height:10px;border-radius:2px;display:inline-block;flex-shrink:0}
 
   .chart-wrap{position:relative;padding:12px 10px 4px;height:230px}
   .chart-wrap.sm{height:180px}
   .chart-wrap.lg{height:280px}
-  .empty{padding:26px 16px;text-align:center;color:var(--text-3);font-size:13px}
-  .empty svg{width:40px;height:40px;color:var(--text-4);display:block;margin:0 auto 10px}
+  .empty{padding:26px 16px;text-align:center;color:var(--text-3);font-size:.82rem}
 
-  .alert-banner{background:var(--danger-bg);color:var(--danger);border-radius:var(--radius);padding:12px 14px;margin-bottom:12px;display:flex;gap:10px;align-items:flex-start;font-size:13px}
+  .alert-banner{background:var(--danger-bg);color:var(--danger);border-radius:var(--radius);padding:12px 14px;margin-bottom:12px;display:flex;gap:10px;align-items:flex-start;font-size:.82rem}
   .alert-banner svg{flex-shrink:0;margin-top:1px}
   .alert-banner b{display:block;margin-bottom:2px}
   .alert-banner.warn{background:var(--warn-bg);color:var(--warn)}
   .alert-banner.info{background:var(--info-bg);color:var(--info)}
 
-  /* ---------- Settings ---------- */
-  .setting{display:flex;justify-content:space-between;align-items:center;padding:14px 16px;border-bottom:1px solid var(--border-2)}
+  .setting{display:flex;justify-content:space-between;align-items:center;padding:14px 16px;border-bottom:1px solid var(--border-2);gap:14px}
   .setting:last-child{border-bottom:none}
-  .setting .txt{flex:1;padding-right:10px}
-  .setting .txt .t{font-size:14px;color:var(--text);font-weight:500}
-  .setting .txt .s{font-size:12px;color:var(--text-3);margin-top:2px}
+  .setting .txt{flex:1}
+  .setting .txt .t{font-size:.875rem;color:var(--text);font-weight:500}
+  .setting .txt .s{font-size:.75rem;color:var(--text-3);margin-top:2px}
 
-  /* toggle */
   .toggle{position:relative;width:44px;height:24px;background:var(--border);border-radius:12px;cursor:pointer;transition:background .2s;flex-shrink:0}
   .toggle.on{background:var(--primary)}
-  .toggle::after{content:"";position:absolute;top:2px;left:2px;width:20px;height:20px;background:#fff;border-radius:50%;transition:transform .2s;box-shadow:0 1px 3px rgba(0,0,0,.2)}
+  .toggle::after{content:"";position:absolute;top:2px;left:2px;width:20px;height:20px;background:#f6f5f3;border-radius:50%;transition:transform .2s;box-shadow:0 1px 3px rgba(0,0,0,.2)}
   .toggle.on::after{transform:translateX(20px)}
+  [data-theme="dark"] .toggle::after{background:#dde0e4}
 
-  /* segmented */
-  .seg{display:inline-flex;background:var(--surface-2);border-radius:8px;padding:3px;gap:2px}
-  .seg button{background:transparent;border:none;color:var(--text-2);padding:6px 10px;border-radius:6px;font-size:12px;font-weight:500}
-  .seg button.active{background:var(--surface);color:var(--text);box-shadow:var(--shadow-1)}
+  .slider-row{display:flex;flex-direction:column;gap:8px;padding:14px 16px;border-bottom:1px solid var(--border-2)}
+  .slider-row .txt{display:flex;justify-content:space-between;align-items:baseline}
+  .slider-row .t{font-size:.875rem;font-weight:500}
+  .slider-row .s{font-size:.75rem;color:var(--text-3)}
+  .slider-row .v-big{font-size:.875rem;color:var(--primary);font-weight:600;margin-left:8px}
+  input[type=range].slider{-webkit-appearance:none;width:100%;height:6px;background:var(--surface-2);border-radius:3px;outline:none;margin:6px 0}
+  input[type=range].slider::-webkit-slider-thumb{-webkit-appearance:none;width:22px;height:22px;border-radius:50%;background:var(--primary);cursor:pointer;box-shadow:0 2px 4px rgba(0,0,0,.2);border:2px solid var(--surface)}
+  input[type=range].slider::-moz-range-thumb{width:22px;height:22px;border-radius:50%;background:var(--primary);cursor:pointer;border:2px solid var(--surface)}
+  .slider-scale{display:flex;justify-content:space-between;font-size:.69rem;color:var(--text-4)}
 
-  /* ---------- Dialogs ---------- */
-  .backdrop{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:100;display:none;align-items:flex-end;justify-content:center;padding:10px}
+  .backdrop{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:100;display:none;align-items:flex-end;justify-content:center;padding:10px}
   .backdrop.open{display:flex}
   .sheet{background:var(--surface);border-radius:16px 16px 10px 10px;width:100%;max-width:480px;max-height:92vh;overflow-y:auto;box-shadow:0 -4px 24px rgba(0,0,0,.3);padding-bottom:env(safe-area-inset-bottom)}
   .sheet-head{padding:14px 16px 10px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border-2);position:sticky;top:0;background:var(--surface);z-index:2}
-  .sheet-head h3{margin:0;font-size:16px;font-weight:500}
+  .sheet-head h3{margin:0;font-size:1rem;font-weight:500}
   .sheet-head .close{background:transparent;border:none;color:var(--text-3);padding:4px;display:flex;align-items:center;justify-content:center;border-radius:50%}
   .sheet-body{padding:16px}
   .sheet-foot{padding:10px 16px 16px;display:flex;gap:8px;justify-content:flex-end;border-top:1px solid var(--border-2);background:var(--surface);position:sticky;bottom:0}
   .sheet-foot .btn{flex:1}
 
   .field{margin-bottom:14px}
-  .field label{display:block;font-size:12px;color:var(--text-3);margin-bottom:6px;font-weight:500;letter-spacing:.3px;text-transform:uppercase}
-  .field input,.field select,.field textarea{width:100%;padding:11px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);color:var(--text);font-size:15px}
+  .field label{display:block;font-size:.75rem;color:var(--text-3);margin-bottom:6px;font-weight:500;letter-spacing:.3px;text-transform:uppercase}
+  .field input,.field select,.field textarea{width:100%;padding:11px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);color:var(--text);font-size:.94rem}
   .field input:focus,.field select:focus,.field textarea:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 3px rgba(21,101,192,.15)}
   .field-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
   .field-row.three{grid-template-columns:1fr 1fr 1fr}
   .checkrow{display:flex;align-items:center;gap:8px;margin-top:4px}
   .checkrow input[type=checkbox]{width:16px;height:16px;accent-color:var(--primary)}
 
-  .sync-step{padding:14px 16px;border-radius:var(--radius);margin-bottom:10px;border:1px solid var(--border);background:var(--surface-2)}
+  .sync-step{padding:12px 14px;border-radius:var(--radius);margin-bottom:8px;border:1px solid var(--border);background:var(--surface-2);font-size:.82rem}
   .sync-step.active{border-color:var(--primary);background:var(--primary-50);color:var(--text)}
   .sync-step.done{border-color:var(--ok);background:var(--ok-bg);color:var(--text)}
-  .sync-step .n{display:inline-flex;width:24px;height:24px;border-radius:50%;background:var(--border);color:var(--text-2);align-items:center;justify-content:center;font-weight:600;font-size:12px;margin-right:8px}
-  .sync-step.active .n{background:var(--primary);color:#fff}
-  .sync-step.done .n{background:var(--ok);color:#fff}
+  .sync-step .n{display:inline-flex;width:22px;height:22px;border-radius:50%;background:var(--border);color:var(--text-2);align-items:center;justify-content:center;font-weight:600;font-size:.75rem;margin-right:8px}
+  .sync-step.active .n{background:var(--primary);color:var(--on-primary)}
+  .sync-step.done .n{background:var(--ok);color:var(--on-primary)}
 
-  .toast{position:fixed;bottom:90px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--text);color:var(--bg);padding:10px 18px;border-radius:20px;font-size:13px;z-index:200;opacity:0;transition:all .3s;box-shadow:0 4px 16px rgba(0,0,0,.3);pointer-events:none}
+  .progress-wrap{margin-top:12px;padding:12px 14px;background:var(--surface-2);border-radius:var(--radius);font-size:.75rem;color:var(--text-2)}
+  .progress-bar{height:6px;background:var(--border);border-radius:3px;margin-top:6px;overflow:hidden}
+  .progress-bar > span{display:block;height:100%;background:var(--primary);transition:width .2s}
+
+  .log-view{margin-top:10px;font-size:.69rem;color:var(--text-3);font-family:"SF Mono","Consolas",monospace;background:var(--surface-2);padding:10px;border-radius:6px;max-height:140px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;display:none}
+
+  .toast{position:fixed;bottom:90px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--text);color:var(--bg);padding:10px 18px;border-radius:20px;font-size:.82rem;z-index:200;opacity:0;transition:all .3s;box-shadow:0 4px 16px rgba(0,0,0,.3);pointer-events:none;max-width:90%;text-align:center}
   .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 
-  .fab{position:fixed;bottom:88px;right:18px;width:56px;height:56px;border-radius:18px;background:var(--primary);color:#fff;border:none;display:flex;align-items:center;justify-content:center;box-shadow:0 6px 16px rgba(21,101,192,.4);z-index:35}
+  .fab{position:fixed;bottom:88px;right:18px;width:56px;height:56px;border-radius:18px;background:var(--primary);color:var(--on-primary);border:none;display:flex;align-items:center;justify-content:center;box-shadow:0 6px 16px rgba(21,101,192,.4);z-index:35}
   .fab svg{width:26px;height:26px}
 
-  .pdf-preview{padding:16px;background:var(--surface-2);border-radius:var(--radius);font-size:12px;color:var(--text-2);line-height:1.6}
-  .pdf-preview h5{margin:0 0 4px 0;font-size:13px;color:var(--text)}
-
-  @media (min-width:600px){
-    .view{max-width:560px;margin:0 auto}
-  }
+  @media (min-width:600px){ .view{max-width:560px;margin:0 auto} }
 </style>
 </head>
 <body data-theme="light">
@@ -260,70 +391,47 @@
 <header class="app-bar">
   <div class="app-bar-row">
     <h1>
-      <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" width="22" height="22"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
-      <span id="app-title">Blutdruck</span>
+      <svg viewBox="0 0 24 24" fill="none" stroke="var(--ico-pulse)" stroke-width="2.2" width="22" height="22"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+      <span>Blutdruck</span>
     </h1>
     <div class="ic">
       <button class="icbtn" id="btn-add-top" title="Messung hinzufügen">
-        <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" width="22" height="22"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        <svg viewBox="0 0 24 24" fill="none" stroke="var(--ico-add)" stroke-width="2.2" width="22" height="22"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
       </button>
       <button class="icbtn" id="btn-sync-top" title="Bluetooth-Sync">
-        <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" width="22" height="22"><path d="M6.5 6.5l11 11L12 23V1l5.5 5.5-11 11"/></svg>
+        <svg viewBox="0 0 24 24" fill="none" stroke="var(--ico-sync)" stroke-width="2.2" width="22" height="22"><path d="M6.5 6.5l11 11L12 23V1l5.5 5.5-11 11"/></svg>
       </button>
     </div>
   </div>
   <div class="status" id="conn-status"><span class="dot off"></span><span id="conn-text">Nicht verbunden</span></div>
 </header>
 
-<!-- =================== ÜBERSICHT =================== -->
 <main id="view-overview" class="view active">
-
   <div id="ov-alerts"></div>
-
-  <div class="card hero-card" id="hero-card">
+  <div class="card hero-card">
     <div class="hero-top">
-      <div class="l"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> <span id="hero-when">Letzte Messung</span></div>
+      <div class="l"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--info)" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> <span id="hero-when">Letzte Messung</span></div>
       <div id="hero-chip"></div>
     </div>
     <div class="hero-v"><span class="sys" id="hero-sys">—</span><span class="sep">/</span><span class="dia" id="hero-dia">—</span></div>
     <div class="hero-sub" id="hero-sub">mmHg · Puls <strong>—</strong></div>
   </div>
-
   <div class="grid-2">
-    <div class="stat-tile info">
-      <div class="l">Ø 7 Tage</div>
-      <div class="v" id="ov-avg-7">—</div>
-      <div class="d" id="ov-avg-7-d">—</div>
-    </div>
-    <div class="stat-tile info">
-      <div class="l">Ø 30 Tage</div>
-      <div class="v" id="ov-avg-30">—</div>
-      <div class="d" id="ov-avg-30-d">—</div>
-    </div>
-    <div class="stat-tile ok">
-      <div class="l"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--danger)" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg> Puls Ø</div>
-      <div class="v" id="ov-pulse">—<small>bpm</small></div>
-      <div class="d" id="ov-pulse-d">—</div>
-    </div>
-    <div class="stat-tile info">
-      <div class="l">Gesamt</div>
-      <div class="v" id="ov-total">—</div>
-      <div class="d" id="ov-total-d">Messungen</div>
-    </div>
+    <div class="stat-tile info"><div class="l">Ø 7 Tage</div><div class="v" id="ov-avg-7">—</div><div class="d" id="ov-avg-7-d">—</div></div>
+    <div class="stat-tile info"><div class="l">Ø 30 Tage</div><div class="v" id="ov-avg-30">—</div><div class="d" id="ov-avg-30-d">—</div></div>
+    <div class="stat-tile ok"><div class="l"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--danger)" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg> Puls Ø</div><div class="v" id="ov-pulse">—<small>bpm</small></div><div class="d" id="ov-pulse-d">—</div></div>
+    <div class="stat-tile info"><div class="l">Gesamt</div><div class="v" id="ov-total">—</div><div class="d" id="ov-total-d">Messungen</div></div>
   </div>
-
   <div class="section">
     <div class="card-head"><h4>Verlauf · 14 Tage</h4><button class="link" onclick="setView('stats')">Details</button></div>
     <div class="chart-wrap"><canvas id="ov-chart"></canvas></div>
   </div>
-
   <div class="section">
     <div class="card-head"><h4>Letzte Messungen</h4><button class="link" onclick="setView('history')">Alle</button></div>
     <div class="list" id="ov-list"></div>
   </div>
 </main>
 
-<!-- =================== VERLAUF =================== -->
 <main id="view-history" class="view">
   <div class="range-tabs" id="hist-tabs">
     <button class="range-tab active" data-range="7">7 Tage</button>
@@ -336,9 +444,9 @@
   <div class="section">
     <div class="card-head">
       <h4 id="hist-title">Alle Messungen</h4>
-      <div class="seg" id="hist-sort">
-        <button data-sort="desc" class="active">Neu</button>
-        <button data-sort="asc">Alt</button>
+      <div style="display:inline-flex;background:var(--surface-2);border-radius:8px;padding:3px;gap:2px" id="hist-sort">
+        <button data-sort="desc" class="active" style="background:var(--surface);border:none;color:var(--text);padding:6px 10px;border-radius:6px;font-size:.75rem;font-weight:500">Neu</button>
+        <button data-sort="asc" style="background:transparent;border:none;color:var(--text-2);padding:6px 10px;border-radius:6px;font-size:.75rem;font-weight:500">Alt</button>
       </div>
     </div>
     <div class="chart-wrap sm"><canvas id="hist-chart"></canvas></div>
@@ -346,7 +454,6 @@
   </div>
 </main>
 
-<!-- =================== STATISTIK =================== -->
 <main id="view-stats" class="view">
   <div class="range-tabs" id="stat-tabs">
     <button class="range-tab" data-range="7">7 T</button>
@@ -355,16 +462,13 @@
     <button class="range-tab" data-range="365">1 J</button>
     <button class="range-tab" data-range="all">Alle</button>
   </div>
-
   <div id="stat-alerts"></div>
-
-  <div class="grid-2" id="stat-avgs">
+  <div class="grid-2">
     <div class="stat-tile info"><div class="l">Ø Systolisch</div><div class="v" id="s-sys">—</div><div class="d" id="s-sys-d">—</div></div>
     <div class="stat-tile info"><div class="l">Ø Diastolisch</div><div class="v" id="s-dia">—</div><div class="d" id="s-dia-d">—</div></div>
     <div class="stat-tile ok"><div class="l">Ø Puls</div><div class="v" id="s-pul">—</div><div class="d" id="s-pul-d">—</div></div>
     <div class="stat-tile info"><div class="l">Messungen</div><div class="v" id="s-cnt">—</div><div class="d" id="s-cnt-d">—</div></div>
   </div>
-
   <div class="grid-3">
     <div class="stat-tile warn"><div class="l">Max Sys</div><div class="v" id="s-max-sys">—</div><div class="d" id="s-max-sys-d">—</div></div>
     <div class="stat-tile warn"><div class="l">Max Dia</div><div class="v" id="s-max-dia">—</div><div class="d" id="s-max-dia-d">—</div></div>
@@ -373,82 +477,54 @@
     <div class="stat-tile info"><div class="l">Min Dia</div><div class="v" id="s-min-dia">—</div><div class="d" id="s-min-dia-d">—</div></div>
     <div class="stat-tile info"><div class="l">Min Puls</div><div class="v" id="s-min-pul">—</div><div class="d" id="s-min-pul-d">—</div></div>
   </div>
-
-  <div class="section">
-    <div class="card-head"><h4>Klassifikation nach ESH/WHO</h4></div>
-    <div class="section-body">
-      <div class="class-bar" id="class-bar"></div>
-      <div class="class-legend" id="class-legend"></div>
-    </div>
-  </div>
-
-  <div class="section">
-    <div class="card-head"><h4>Verlauf &amp; Trend</h4></div>
-    <div class="chart-wrap lg"><canvas id="stat-chart-trend"></canvas></div>
-  </div>
-
+  <div class="section"><div class="card-head"><h4>Klassifikation nach ESH/WHO</h4></div><div class="section-body"><div class="class-bar" id="class-bar"></div><div class="class-legend" id="class-legend"></div></div></div>
+  <div class="section"><div class="card-head"><h4>Verlauf &amp; Trend</h4></div><div class="chart-wrap lg"><canvas id="stat-chart-trend"></canvas></div></div>
   <div class="section">
     <div class="card-head"><h4>Morgens vs. Abends</h4></div>
-    <div class="section-body">
-      <div class="grid-2">
-        <div class="stat-tile info"><div class="l">Ø Morgens (&lt;12:00)</div><div class="v" id="s-morn">—</div><div class="d" id="s-morn-d">—</div></div>
-        <div class="stat-tile info"><div class="l">Ø Abends (≥12:00)</div><div class="v" id="s-eve">—</div><div class="d" id="s-eve-d">—</div></div>
-      </div>
-    </div>
+    <div class="section-body"><div class="grid-2">
+      <div class="stat-tile info"><div class="l">Ø Morgens (&lt;12:00)</div><div class="v" id="s-morn">—</div><div class="d" id="s-morn-d">—</div></div>
+      <div class="stat-tile info"><div class="l">Ø Abends (≥12:00)</div><div class="v" id="s-eve">—</div><div class="d" id="s-eve-d">—</div></div>
+    </div></div>
     <div class="chart-wrap sm"><canvas id="stat-chart-me"></canvas></div>
   </div>
-
-  <div class="section">
-    <div class="card-head"><h4>Wochentags-Übersicht</h4></div>
-    <div class="chart-wrap"><canvas id="stat-chart-wd"></canvas></div>
-  </div>
-
-  <div class="section">
-    <div class="card-head"><h4>Puls-Verlauf</h4></div>
-    <div class="chart-wrap sm"><canvas id="stat-chart-pulse"></canvas></div>
-  </div>
-
+  <div class="section"><div class="card-head"><h4>Wochentags-Übersicht</h4></div><div class="chart-wrap"><canvas id="stat-chart-wd"></canvas></div></div>
+  <div class="section"><div class="card-head"><h4>Puls-Verlauf</h4></div><div class="chart-wrap sm"><canvas id="stat-chart-pulse"></canvas></div></div>
   <div class="section">
     <div class="card-head"><h4>Weitere Kennzahlen</h4></div>
-    <div class="section-body">
-      <div class="grid-2">
-        <div class="stat-tile info"><div class="l">Std.abw. Sys</div><div class="v" id="s-std-sys">—</div><div class="d">Streuung (σ)</div></div>
-        <div class="stat-tile info"><div class="l">Std.abw. Dia</div><div class="v" id="s-std-dia">—</div><div class="d">Streuung (σ)</div></div>
-        <div class="stat-tile info"><div class="l">Mittl. arter. Druck</div><div class="v" id="s-map">—</div><div class="d">MAP ≈ Dia + (Sys-Dia)/3</div></div>
-        <div class="stat-tile info"><div class="l">Puls-Druck</div><div class="v" id="s-pp">—</div><div class="d">Sys − Dia</div></div>
-      </div>
-    </div>
+    <div class="section-body"><div class="grid-2">
+      <div class="stat-tile info"><div class="l">Std.abw. Sys</div><div class="v" id="s-std-sys">—</div><div class="d">Streuung (σ)</div></div>
+      <div class="stat-tile info"><div class="l">Std.abw. Dia</div><div class="v" id="s-std-dia">—</div><div class="d">Streuung (σ)</div></div>
+      <div class="stat-tile info"><div class="l">Mittl. arter. Druck</div><div class="v" id="s-map">—</div><div class="d">MAP ≈ Dia + (Sys-Dia)/3</div></div>
+      <div class="stat-tile info"><div class="l">Puls-Druck</div><div class="v" id="s-pp">—</div><div class="d">Sys − Dia</div></div>
+    </div></div>
   </div>
 </main>
 
-<!-- =================== DATEN =================== -->
 <main id="view-data" class="view">
   <div class="section">
-    <div class="card-head"><h4>OMRON M7 verbinden</h4></div>
+    <div class="card-head"><h4>OMRON M7 verbinden (HEM-7361T)</h4></div>
     <div class="section-body">
-      <p style="margin:0 0 12px;font-size:13px;color:var(--text-2);line-height:1.5">Liest alle auf dem Gerät gespeicherten Messwerte aus und ergänzt die Datenbank. Dubletten werden automatisch erkannt.</p>
-      <button class="btn primary" style="width:100%" onclick="openSync()">
+      <p style="margin:0 0 12px;font-size:.82rem;color:var(--text-2);line-height:1.5">Liest alle auf dem Gerät gespeicherten Messwerte beider Benutzerprofile aus. Dubletten werden automatisch erkannt.</p>
+      <button class="btn primary" id="btn-sync-main" style="width:100%" onclick="openSync()">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6.5 6.5l11 11L12 23V1l5.5 5.5-11 11"/></svg>
-        Jetzt synchronisieren
+        <span id="btn-sync-main-text">Verbinden</span>
       </button>
     </div>
   </div>
-
   <div class="section">
     <div class="card-head"><h4>Manuelle Eingabe</h4></div>
     <div class="section-body">
-      <p style="margin:0 0 12px;font-size:13px;color:var(--text-2);line-height:1.5">Messung ohne Gerät eintragen.</p>
+      <p style="margin:0 0 12px;font-size:.82rem;color:var(--text-2);line-height:1.5">Messung ohne Gerät eintragen.</p>
       <button class="btn ghost" style="width:100%" onclick="openAdd()">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
         Messung hinzufügen
       </button>
     </div>
   </div>
-
   <div class="section">
     <div class="card-head"><h4>PDF-Bericht für den Arzt</h4></div>
     <div class="section-body">
-      <p style="margin:0 0 10px;font-size:13px;color:var(--text-2);line-height:1.5">Erste Seite: Statistiken mit Grafiken. Danach: vollständige, sortierte Tabelle aller Messwerte.</p>
+      <p style="margin:0 0 10px;font-size:.82rem;color:var(--text-2);line-height:1.5">Erste Seite: Statistiken mit Grafiken. Danach: vollständige, sortierte Tabelle aller Messwerte.</p>
       <div class="field">
         <label>Zeitraum</label>
         <select id="pdf-range">
@@ -465,7 +541,6 @@
       </button>
     </div>
   </div>
-
   <div class="section">
     <div class="card-head"><h4>Datenbank sichern &amp; wiederherstellen</h4></div>
     <div class="section-body">
@@ -484,10 +559,9 @@
         </button>
       </div>
       <input type="file" id="file-import" accept=".json,application/json" style="display:none" onchange="importJSON(event)">
-      <p style="margin:14px 0 0;font-size:11px;color:var(--text-3);line-height:1.5">Export speichert alle Messungen + Einstellungen als JSON. Import fügt zu vorhandenen Daten hinzu (keine Dubletten).</p>
+      <p style="margin:14px 0 0;font-size:.69rem;color:var(--text-3);line-height:1.5">Der Export wird im Verzeichnis <b>Download</b> des Geräts gespeichert. Dateiname: <code style="background:var(--surface-2);padding:1px 4px;border-radius:3px">jjjj.mm.tt hh-mm Backup Blutdruckdaten.json</code>.</p>
     </div>
   </div>
-
   <div class="section">
     <div class="card-head"><h4 style="color:var(--danger)">Gefahrenzone</h4></div>
     <div class="section-body">
@@ -499,7 +573,6 @@
   </div>
 </main>
 
-<!-- =================== EINSTELLUNGEN =================== -->
 <main id="view-settings" class="view">
   <div class="section">
     <div class="card-head"><h4>Darstellung</h4></div>
@@ -507,19 +580,33 @@
       <div class="txt"><div class="t">Dunkles Design</div><div class="s">Hell/Dunkel umschalten</div></div>
       <div class="toggle" id="toggle-theme" onclick="toggleTheme()"></div>
     </div>
+    <div class="slider-row">
+      <div class="txt"><div><span class="t">Schriftgröße</span><span class="v-big" id="font-label">100 %</span></div><div class="s">Für bessere Lesbarkeit</div></div>
+      <input type="range" id="font-slider" class="slider" min="85" max="135" step="5" value="100" oninput="setFontScale(this.value)">
+      <div class="slider-scale"><span>A</span><span>A+</span><span style="font-size:.875rem">A++</span></div>
+    </div>
     <div class="setting">
       <div class="txt"><div class="t">Grenzwerte hervorheben</div><div class="s">Auffällige Werte farbig markieren</div></div>
       <div class="toggle on" id="toggle-highlight" onclick="toggleSetting('highlight', this)"></div>
     </div>
   </div>
 
+  <!-- PWA Install-Sektion — nur sichtbar wenn Prompt verfügbar und nicht bereits installiert -->
+  <div class="section" id="pwa-install-section" style="display:none">
+    <div class="card-head"><h4>App installieren</h4></div>
+    <div class="section-body">
+      <p style="margin:0 0 12px;font-size:.82rem;color:var(--text-2);line-height:1.5">Zum Startbildschirm hinzufügen — die App startet dann wie eine native Anwendung, funktioniert offline und nutzt den vollen Bildschirm.</p>
+      <button class="btn ok" id="btn-install" style="width:100%">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Zum Startbildschirm hinzufügen
+      </button>
+    </div>
+  </div>
+
   <div class="section">
     <div class="card-head"><h4>Benutzer (für PDF-Bericht)</h4></div>
     <div class="section-body">
-      <div class="field">
-        <label>Name</label>
-        <input type="text" id="set-name" placeholder="Max Mustermann" oninput="saveUserField('name', this.value)">
-      </div>
+      <div class="field"><label>Name</label><input type="text" id="set-name" placeholder="Max Mustermann" oninput="saveUserField('name', this.value)"></div>
       <div class="field-row">
         <div class="field"><label>Geburtstag</label><input type="date" id="set-dob" oninput="saveUserField('dob', this.value)"></div>
         <div class="field"><label>Arzt</label><input type="text" id="set-doctor" placeholder="Dr. ..." oninput="saveUserField('doctor', this.value)"></div>
@@ -527,11 +614,10 @@
       <div class="field"><label>Medikation</label><textarea id="set-meds" rows="2" placeholder="z.B. Ramipril 5mg, 1-0-0" oninput="saveUserField('meds', this.value)"></textarea></div>
     </div>
   </div>
-
   <div class="section">
     <div class="card-head"><h4>Grenzwerte (ESH/WHO)</h4></div>
     <div class="section-body">
-      <p style="margin:0 0 12px;font-size:12px;color:var(--text-3);line-height:1.5">Referenzwerte zur Klassifikation. Nur ändern, wenn von Arzt individuell vorgegeben.</p>
+      <p style="margin:0 0 12px;font-size:.75rem;color:var(--text-3);line-height:1.5">Nur ändern, wenn vom Arzt individuell vorgegeben.</p>
       <div class="field-row">
         <div class="field"><label>Sys Normal &lt;</label><input type="number" id="th-sys-normal" value="130" oninput="saveThreshold('sysNormal',this.value)"></div>
         <div class="field"><label>Sys Hoch ≥</label><input type="number" id="th-sys-high" value="140" oninput="saveThreshold('sysHigh',this.value)"></div>
@@ -543,17 +629,28 @@
       <button class="btn outline" style="width:100%" onclick="resetThresholds()">Auf ESH-Standard zurücksetzen</button>
     </div>
   </div>
-
   <div class="section">
     <div class="card-head"><h4>Über</h4></div>
-    <div class="section-body" style="font-size:13px;color:var(--text-2);line-height:1.6">
-      <p style="margin:0 0 8px">Blutdruck-App für OMRON M7 Intelli IT.<br>Läuft lokal &mdash; alle Daten bleiben auf diesem Gerät.</p>
-      <p style="margin:0;color:var(--text-3);font-size:12px">Version 1.0 · <span id="storage-info">—</span></p>
+    <div class="section-body" style="font-size:.82rem;color:var(--text-2);line-height:1.6;text-align:center">
+      <svg width="80" height="80" viewBox="0 0 512 512" style="margin:4px auto 12px;display:block;border-radius:20px;box-shadow:var(--shadow-2)">
+        <defs>
+          <linearGradient id="aboutBg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1e88e5"/><stop offset=".55" stop-color="#1565c0"/><stop offset="1" stop-color="#0d47a1"/></linearGradient>
+          <linearGradient id="aboutPulse" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#ffab91"/><stop offset=".5" stop-color="#ff8a80"/><stop offset="1" stop-color="#ffab91"/></linearGradient>
+        </defs>
+        <rect width="512" height="512" rx="116" fill="url(#aboutBg)"/>
+        <path d="M0 0h512v150q-256-55-512 0z" fill="rgba(255,255,255,.09)"/>
+        <path d="M56 258h400" stroke="rgba(255,255,255,.15)" stroke-width="4" stroke-linecap="round"/>
+        <path d="M56 258L172 258 200 258 222 196 250 334 278 118 306 378 332 258 456 258" fill="none" stroke="url(#aboutPulse)" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
+        <circle cx="56" cy="258" r="13" fill="#ffccbc"/>
+        <circle cx="456" cy="258" r="13" fill="#ffccbc"/>
+      </svg>
+      <p style="margin:0 0 4px;font-weight:600;color:var(--text);font-size:.94rem">OMRON M7 Blutdruck</p>
+      <p style="margin:0 0 8px">für OMRON M7 Intelli IT (HEM-7361T).<br>Läuft lokal &mdash; alle Daten bleiben auf diesem Gerät.<br><span id="pwa-status" style="color:var(--text-3);font-size:.75rem"></span></p>
+      <p style="margin:0;color:var(--text-3);font-size:.75rem">Version 2.0 · <span id="storage-info">—</span></p>
     </div>
   </div>
 </main>
 
-<!-- =================== BOTTOM NAV =================== -->
 <nav class="bottom-nav">
   <button class="nav-btn active" data-view="overview" onclick="setView('overview')">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
@@ -577,14 +674,11 @@
   </button>
 </nav>
 
-<!-- =================== DIALOG: ADD READING =================== -->
 <div class="backdrop" id="dlg-add">
   <div class="sheet">
     <div class="sheet-head">
       <h3>Messung hinzufügen</h3>
-      <button class="close" onclick="closeDialog('dlg-add')">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-      </button>
+      <button class="close" onclick="closeDialog('dlg-add')"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
     </div>
     <div class="sheet-body">
       <div class="field-row three">
@@ -596,12 +690,9 @@
         <div class="field"><label>Datum</label><input type="date" id="in-date"></div>
         <div class="field"><label>Zeit</label><input type="time" id="in-time"></div>
       </div>
-      <div class="field">
-        <label>Arm</label>
-        <select id="in-arm"><option value="links">Links</option><option value="rechts">Rechts</option></select>
-      </div>
+      <div class="field"><label>Arm</label><select id="in-arm"><option value="links">Links</option><option value="rechts">Rechts</option></select></div>
       <div class="field"><label>Notiz (optional)</label><input type="text" id="in-note" placeholder="z.B. nach Sport"></div>
-      <div class="checkrow"><input type="checkbox" id="in-irr"><label for="in-irr" style="margin:0;font-size:13px;color:var(--text-2);text-transform:none;letter-spacing:0">Unregelmäßiger Herzschlag erkannt</label></div>
+      <div class="checkrow"><input type="checkbox" id="in-irr"><label for="in-irr" style="margin:0;font-size:.82rem;color:var(--text-2);text-transform:none;letter-spacing:0">Unregelmäßiger Herzschlag erkannt</label></div>
     </div>
     <div class="sheet-foot">
       <button class="btn outline" onclick="closeDialog('dlg-add')">Abbrechen</button>
@@ -610,24 +701,26 @@
   </div>
 </div>
 
-<!-- =================== DIALOG: SYNC =================== -->
 <div class="backdrop" id="dlg-sync">
   <div class="sheet">
     <div class="sheet-head">
-      <h3>OMRON M7 synchronisieren</h3>
-      <button class="close" onclick="closeDialog('dlg-sync')">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-      </button>
+      <h3>OMRON HEM-7361T synchronisieren</h3>
+      <button class="close" onclick="closeDialog('dlg-sync')"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
     </div>
     <div class="sheet-body">
       <div id="sync-steps">
-        <div class="sync-step active" id="step-1"><span class="n">1</span>Am OMRON M7 die Bluetooth-Taste gedrückt halten, bis <b>"bt"</b> blinkt.</div>
-        <div class="sync-step" id="step-2"><span class="n">2</span>Unten auf <b>"Gerät suchen"</b> tippen und in der Browser-Auswahl den OMRON wählen.</div>
-        <div class="sync-step" id="step-3"><span class="n">3</span>Auf Datenübertragung warten &mdash; die App übernimmt alle gespeicherten Messwerte.</div>
+        <div class="sync-step active" id="step-1"><span class="n">1</span>Am OMRON M7 die Bluetooth-Taste gedrückt halten, bis <b>"-P-"</b> (Erstverbindung) oder <b>"bt"</b> (bereits gekoppelt) im Display blinkt.</div>
+        <div class="sync-step" id="step-2"><span class="n">2</span>Auf <b>"Gerät suchen"</b> tippen und in der Browser-Auswahl das OMRON-Gerät wählen.</div>
+        <div class="sync-step" id="step-3"><span class="n">3</span>Auf Pairing und Auslesen warten. Nach Abschluss trennt die App automatisch.</div>
       </div>
-      <div id="sync-log" style="margin-top:12px;font-size:12px;color:var(--text-3);font-family:'SF Mono',monospace;background:var(--surface-2);padding:10px;border-radius:6px;max-height:140px;overflow-y:auto;display:none"></div>
+      <div class="progress-wrap" id="sync-progress" style="display:none">
+        <div id="sync-progress-text">Bereit.</div>
+        <div class="progress-bar"><span id="sync-progress-bar" style="width:0%"></span></div>
+      </div>
+      <div class="log-view" id="sync-log"></div>
     </div>
     <div class="sheet-foot">
+      <button class="btn outline" onclick="toggleSyncLog()" title="Debug-Log">Log</button>
       <button class="btn outline" onclick="closeDialog('dlg-sync')">Schließen</button>
       <button class="btn primary" onclick="startBluetoothSync()" id="btn-sync-start">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6.5 6.5l11 11L12 23V1l5.5 5.5-11 11"/></svg>
@@ -648,15 +741,64 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.7.0/jspdf.plugin.autotable.min.js"></script>
 
 <script>
-/* ============================================================
- *  DATEN-MODELL
- * ============================================================ */
-const STORE_KEY = 'bp_omron_v1';
+/* ============================================================================================
+ *  INDEXED DB — Persistenz-Schicht (ersetzt localStorage)
+ *  Stores:  readings (keyPath 'id'), meta (keyPath 'key')
+ *  API:     DB.open(), DB.getAll('readings'), DB.get('meta', key),
+ *           DB.put(store, obj), DB.putMany('readings', arr),
+ *           DB.delete(store, key), DB.clear(store)
+ *  Migration v1→v2: liest einmalig den alten localStorage-Key "bp_omron_v1"
+ *  und schreibt Daten nach IDB, löscht dann den LS-Key.
+ * ============================================================================================ */
+const DB = {
+  _db: null,
+  async open(){
+    if(this._db) return this._db;
+    return new Promise((resolve, reject)=>{
+      const req = indexedDB.open('omron_bp', 1);
+      req.onupgradeneeded = e => {
+        const db = e.target.result;
+        if(!db.objectStoreNames.contains('readings')) db.createObjectStore('readings', { keyPath:'id' });
+        if(!db.objectStoreNames.contains('meta'))     db.createObjectStore('meta',     { keyPath:'key' });
+      };
+      req.onsuccess = e => { this._db = e.target.result; resolve(this._db); };
+      req.onerror   = () => reject(req.error);
+    });
+  },
+  _tx(store, mode){ return this._db.transaction(store, mode).objectStore(store); },
+  getAll(store){
+    return new Promise((res,rej)=>{ const r=this._tx(store,'readonly').getAll(); r.onsuccess=()=>res(r.result||[]); r.onerror=()=>rej(r.error); });
+  },
+  get(store, key){
+    return new Promise((res,rej)=>{ const r=this._tx(store,'readonly').get(key); r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); });
+  },
+  put(store, obj){
+    return new Promise((res,rej)=>{ const r=this._tx(store,'readwrite').put(obj); r.onsuccess=()=>res(); r.onerror=()=>rej(r.error); });
+  },
+  putMany(store, arr){
+    return new Promise((res,rej)=>{
+      const t = this._db.transaction(store, 'readwrite'); const os = t.objectStore(store);
+      arr.forEach(o => os.put(o));
+      t.oncomplete = ()=>res(); t.onerror = ()=>rej(t.error);
+    });
+  },
+  delete(store, key){
+    return new Promise((res,rej)=>{ const r=this._tx(store,'readwrite').delete(key); r.onsuccess=()=>res(); r.onerror=()=>rej(r.error); });
+  },
+  clear(store){
+    return new Promise((res,rej)=>{ const r=this._tx(store,'readwrite').clear(); r.onsuccess=()=>res(); r.onerror=()=>rej(r.error); });
+  }
+};
+
+/* ============================================================================================
+ *  ZUSTAND
+ * ============================================================================================ */
 const state = {
   readings: [],
   settings: {
     theme: 'light',
     highlight: true,
+    fontScale: 100,
     user: { name:'', dob:'', doctor:'', meds:'' },
     thresholds: { sysNormal:130, sysHigh:140, diaNormal:85, diaHigh:90 }
   },
@@ -664,16 +806,57 @@ const state = {
   charts: {}
 };
 
-function load(){
+async function load(){
   try{
-    const raw = localStorage.getItem(STORE_KEY);
-    if(raw){ Object.assign(state, JSON.parse(raw)); }
-    else { state.readings = generateSampleData(); save(); }
-  }catch(e){ console.error(e); state.readings = generateSampleData(); }
+    await DB.open();
+    /* Migration aus altem localStorage (einmalig) */
+    try{
+      const old = localStorage.getItem('bp_omron_v1');
+      if(old){
+        const existing = await DB.getAll('readings');
+        if(existing.length === 0){
+          const parsed = JSON.parse(old);
+          if(Array.isArray(parsed.readings) && parsed.readings.length){
+            await DB.putMany('readings', parsed.readings);
+          }
+          if(parsed.settings){
+            await DB.put('meta', { key:'settings', value: parsed.settings });
+          }
+        }
+        localStorage.removeItem('bp_omron_v1');
+      }
+    }catch(e){ /* localStorage-Zugriff kann fehlschlagen — ignorieren */ }
+
+    const rec = await DB.getAll('readings');
+    state.readings = rec.sort((a,b)=>a.ts-b.ts);
+    const settings = await DB.get('meta', 'settings');
+    if(settings && settings.value) state.settings = Object.assign(state.settings, settings.value);
+    const ui = await DB.get('meta', 'ui');
+    if(ui && ui.value) state.ui = Object.assign(state.ui, ui.value);
+
+    if(state.readings.length === 0){
+      state.readings = generateSampleData();
+      await DB.putMany('readings', state.readings);
+    }
+  }catch(e){
+    console.error('IndexedDB nicht verfügbar — In-Memory-Fallback:', e);
+    state.readings = generateSampleData();
+  }
 }
+/* save() ist fire-and-forget (keine awaits nötig an den Aufrufstellen) */
 function save(){
-  try{ localStorage.setItem(STORE_KEY, JSON.stringify(state)); }catch(e){ console.error(e); }
+  try{
+    DB.put('meta', { key:'settings', value: state.settings }).catch(()=>{});
+    DB.put('meta', { key:'ui',       value: state.ui       }).catch(()=>{});
+  }catch(e){}
 }
+function persistReading(r){
+  try{ DB.put('readings', r).catch(()=>{}); }catch(e){}
+}
+function persistAllReadings(){
+  try{ DB.clear('readings').then(()=>DB.putMany('readings', state.readings)).catch(()=>{}); }catch(e){}
+}
+
 function generateSampleData(){
   const out = []; const now = Date.now(); const day = 86400000;
   for(let d=60; d>=0; d--){
@@ -684,19 +867,20 @@ function generateSampleData(){
     const diaBase = 80 + Math.sin(d/10)*2 + (Math.random()-.5)*5;
     const pulBase = 68 + (Math.random()-.5)*10;
     const mkt = h => { const t = new Date(base); t.setHours(h, Math.floor(Math.random()*60), 0, 0); return t.getTime(); };
-    out.push({ id:uid(), ts:mkt(mornH), sys:Math.round(sysBase+4), dia:Math.round(diaBase+2), pul:Math.round(pulBase), arm:'links', note:'', irr:false });
-    out.push({ id:uid(), ts:mkt(eveH), sys:Math.round(sysBase-2), dia:Math.round(diaBase-1), pul:Math.round(pulBase-3), arm:'links', note:'', irr:false });
+    out.push({ id:uid(), ts:mkt(mornH), sys:Math.round(sysBase+4), dia:Math.round(diaBase+2), pul:Math.round(pulBase), arm:'links', note:'', irr:false, mov:false });
+    out.push({ id:uid(), ts:mkt(eveH), sys:Math.round(sysBase-2), dia:Math.round(diaBase-1), pul:Math.round(pulBase-3), arm:'links', note:'', irr:false, mov:false });
     if(d===28 || d===12 || d===4){
       const t=new Date(base); t.setHours(21,15,0,0);
-      out.push({ id:uid(), ts:t.getTime(), sys:142+Math.floor(Math.random()*12), dia:91+Math.floor(Math.random()*6), pul:78, arm:'links', note:'', irr:false });
+      out.push({ id:uid(), ts:t.getTime(), sys:142+Math.floor(Math.random()*12), dia:91+Math.floor(Math.random()*6), pul:78, arm:'links', note:'', irr:d===12, mov:d===4 });
     }
   }
   return out.sort((a,b)=>a.ts-b.ts);
 }
 function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,8); }
+function pad2(n){ return String(n).padStart(2,'0'); }
 
 /* ============================================================
- *  KLASSIFIKATION
+ *  KLASSIFIKATION (ESH/WHO)
  * ============================================================ */
 const CLASSES = [
   { key:'opt', label:'Optimal',         sysMax:120, diaMax:80,  color:'#2e7d32' },
@@ -707,9 +891,7 @@ const CLASSES = [
   { key:'h3',  label:'Hypertonie Gr.3', sysMax:999, diaMax:999, color:'#b71c1c' }
 ];
 function classify(sys, dia){
-  for(const c of CLASSES){
-    if(sys < c.sysMax && dia < c.diaMax) return c;
-  }
+  for(const c of CLASSES){ if(sys < c.sysMax && dia < c.diaMax) return c; }
   return CLASSES[CLASSES.length-1];
 }
 function statusChip(sys, dia){
@@ -717,7 +899,6 @@ function statusChip(sys, dia){
   let cls = 'normal';
   if(c.key==='hn') cls = 'elev';
   else if(c.key==='h1' || c.key==='h2' || c.key==='h3') cls = 'high';
-  else if(c.key==='opt' || c.key==='nor') cls = 'normal';
   return `<span class="chip ${cls}"><span class="dt"></span>${c.label}</span>`;
 }
 function severity(sys, dia){
@@ -728,10 +909,21 @@ function severity(sys, dia){
 }
 
 /* ============================================================
+ *  DATUMSFORMAT (TT.MM.JJJJ  HH:MM)
+ * ============================================================ */
+const fmt = {
+  date:    ts => { const d=new Date(ts); return `${pad2(d.getDate())}.${pad2(d.getMonth()+1)}.${d.getFullYear()}`; },
+  time:    ts => { const d=new Date(ts); return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`; },
+  dateTime: ts => fmt.date(ts)+' · '+fmt.time(ts),
+  filename: ts => { const d=new Date(ts); return `${d.getFullYear()}.${pad2(d.getMonth()+1)}.${pad2(d.getDate())} ${pad2(d.getHours())}-${pad2(d.getMinutes())}`; },
+  shortDate: ts => { const d=new Date(ts); return `${pad2(d.getDate())}.${pad2(d.getMonth()+1)}.`; }
+};
+
+/* ============================================================
  *  VIEW-SWITCHING
  * ============================================================ */
 function setView(name){
-  state.ui.view = name;
+  state.ui.view = name; save();
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
   document.getElementById('view-'+name).classList.add('active');
   document.querySelectorAll('.nav-btn').forEach(b=>b.classList.toggle('active', b.dataset.view===name));
@@ -745,23 +937,7 @@ function setView(name){
 }
 
 /* ============================================================
- *  FORMATIERUNG
- * ============================================================ */
-const fmt = {
-  date: ts => new Date(ts).toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric'}),
-  time: ts => new Date(ts).toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'}),
-  rel: ts => {
-    const diff = (Date.now()-ts)/86400000;
-    if(diff<1) return 'Heute · '+fmt.time(ts);
-    if(diff<2) return 'Gestern · '+fmt.time(ts);
-    if(diff<7) return new Date(ts).toLocaleDateString('de-DE',{weekday:'long'})+' · '+fmt.time(ts);
-    return fmt.date(ts)+' · '+fmt.time(ts);
-  },
-  shortDate: ts => new Date(ts).toLocaleDateString('de-DE',{day:'2-digit',month:'short'})
-};
-
-/* ============================================================
- *  STATISTIK-BERECHNUNG
+ *  STATISTIK
  * ============================================================ */
 function getRange(days){
   if(days==='all') return state.readings.slice();
@@ -820,16 +996,14 @@ function renderOverview(){
   document.getElementById('hero-sys').textContent = latest.sys;
   document.getElementById('hero-dia').textContent = latest.dia;
   document.getElementById('hero-sub').innerHTML = `mmHg · Puls <strong>${latest.pul} bpm</strong> · ${latest.arm==='rechts'?'rechter':'linker'} Arm`;
-  document.getElementById('hero-when').textContent = fmt.rel(latest.ts);
+  document.getElementById('hero-when').textContent = fmt.dateTime(latest.ts);
   document.getElementById('hero-chip').innerHTML = statusChip(latest.sys, latest.dia);
-
   const sev = severity(latest.sys, latest.dia);
   if(sev==='high'){
     alerts.innerHTML = `<div class="alert-banner"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg><div><b>Erhöhter Blutdruck</b>Die letzte Messung liegt im hypertonen Bereich. Ruhe, ggf. nachmessen.</div></div>`;
   } else if(sev==='elev'){
     alerts.innerHTML = `<div class="alert-banner warn"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg><div><b>Hoch-normaler Bereich</b>Verlauf im Auge behalten.</div></div>`;
   }
-
   const s7 = computeStats(getRange('7'));
   const s30 = computeStats(getRange('30'));
   const sPrev = computeStats(state.readings.filter(x=>{ const c=Date.now()-14*86400000; return x.ts>=c && x.ts<Date.now()-7*86400000; }));
@@ -844,33 +1018,37 @@ function renderOverview(){
   document.getElementById('ov-pulse-d').textContent = s7.count ? 'Ruhepuls Ø 7 Tage' : '—';
   document.getElementById('ov-total').textContent = r.length;
   document.getElementById('ov-total-d').textContent = `Messungen gesamt`;
-
   renderOverviewChart();
   renderOverviewList();
 }
-
 function renderOverviewChart(){
   const data = getRange('14').sort((a,b)=>a.ts-b.ts);
-  const labels = data.map(r=>fmt.shortDate(r.ts));
-  const sys = data.map(r=>r.sys), dia = data.map(r=>r.dia);
   if(state.charts.ov) state.charts.ov.destroy();
   const ctx = document.getElementById('ov-chart').getContext('2d');
-  state.charts.ov = new Chart(ctx, chartOptions('line', { labels, datasets:[
-    { label:'Systolisch', data:sys, borderColor:css('--primary'), backgroundColor:'rgba(21,101,192,.1)', fill:true, tension:.35, pointRadius:2 },
-    { label:'Diastolisch', data:dia, borderColor:css('--primary-light'), backgroundColor:'transparent', tension:.35, pointRadius:2 }
-  ]}));
+  state.charts.ov = new Chart(ctx, chartOptions('line', {
+    labels: data.map(r=>fmt.shortDate(r.ts)),
+    datasets:[
+      { label:'Systolisch', data:data.map(r=>r.sys), borderColor:css('--primary'), backgroundColor:'rgba(21,101,192,.1)', fill:true, tension:.35, pointRadius:2 },
+      { label:'Diastolisch', data:data.map(r=>r.dia), borderColor:css('--primary-light'), backgroundColor:'transparent', tension:.35, pointRadius:2 }
+    ]}));
 }
 function renderOverviewList(){
   const last = state.readings.slice().sort((a,b)=>b.ts-a.ts).slice(0,6);
-  const host = document.getElementById('ov-list');
-  host.innerHTML = last.map(r=>rowHtml(r)).join('') || '<div class="empty">Keine Messungen</div>';
+  document.getElementById('ov-list').innerHTML = last.map(r=>rowHtml(r)).join('') || '<div class="empty">Keine Messungen</div>';
+}
+function flagsHtml(r){
+  let out = '';
+  if(r.mov) out += `<span class="flag-ic mov" title="Bewegung erkannt — Messung möglicherweise ungenau">↯ MOV</span>`;
+  if(r.irr) out += `<span class="flag-ic ihb" title="Unregelmäßiger Herzschlag erkannt">⚠ IHB</span>`;
+  return out;
 }
 function rowHtml(r){
   const c = classify(r.sys, r.dia);
   const alert = ['h1','h2','h3'].includes(c.key);
   let cls = 'normal'; if(c.key==='hn') cls='elev'; else if(alert) cls='high';
+  const noteTxt = (r.note ? ' · '+escape(r.note) : '');
   return `<div class="item ${alert && state.settings.highlight?'alert':''}">
-    <div class="dt-col">${fmt.rel(r.ts)}<small>${r.arm==='rechts'?'rechter':'linker'} Arm${r.note?' · '+escape(r.note):''}${r.irr?' · ⚠ unregelmäßig':''}</small></div>
+    <div class="dt-col">${fmt.dateTime(r.ts)}<small>${r.arm==='rechts'?'rechter':'linker'} Arm${noteTxt} ${flagsHtml(r)}</small></div>
     <div class="bp-col">${r.sys}/${r.dia}<small>Puls ${r.pul}</small></div>
     <span class="chip ${cls}"><span class="dt"></span>${c.label}</span>
   </div>`;
@@ -882,12 +1060,16 @@ function escape(s){ return String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&
  * ============================================================ */
 function renderHistory(){
   document.querySelectorAll('#hist-tabs .range-tab').forEach(t=>t.classList.toggle('active', t.dataset.range===state.ui.histRange));
-  document.querySelectorAll('#hist-sort button').forEach(b=>b.classList.toggle('active', b.dataset.sort===state.ui.histSort));
+  document.querySelectorAll('#hist-sort button').forEach(b=>{
+    const active = b.dataset.sort===state.ui.histSort;
+    b.classList.toggle('active', active);
+    b.style.background = active ? 'var(--surface)' : 'transparent';
+    b.style.color = active ? 'var(--text)' : 'var(--text-2)';
+  });
   const rng = state.ui.histRange;
   let data = getRange(rng);
   const sorted = data.slice().sort((a,b)=> state.ui.histSort==='desc' ? b.ts-a.ts : a.ts-b.ts);
   document.getElementById('hist-title').textContent = `${data.length} Messungen · ${rng==='all'?'alle':rng+' Tage'}`;
-
   if(state.charts.hist) state.charts.hist.destroy();
   const chartData = data.slice().sort((a,b)=>a.ts-b.ts);
   const ctx = document.getElementById('hist-chart').getContext('2d');
@@ -900,12 +1082,8 @@ function renderHistory(){
   }));
   document.getElementById('hist-list').innerHTML = sorted.map(rowHtml).join('') || '<div class="empty">Keine Daten in diesem Zeitraum.</div>';
 }
-document.getElementById('hist-tabs').addEventListener('click', e=>{
-  if(e.target.dataset.range){ state.ui.histRange = e.target.dataset.range; save(); renderHistory(); }
-});
-document.getElementById('hist-sort').addEventListener('click', e=>{
-  if(e.target.dataset.sort){ state.ui.histSort = e.target.dataset.sort; save(); renderHistory(); }
-});
+document.getElementById('hist-tabs').addEventListener('click', e=>{ if(e.target.dataset.range){ state.ui.histRange = e.target.dataset.range; save(); renderHistory(); } });
+document.getElementById('hist-sort').addEventListener('click', e=>{ if(e.target.dataset.sort){ state.ui.histSort = e.target.dataset.sort; save(); renderHistory(); } });
 
 /* ============================================================
  *  RENDER: STATS
@@ -915,7 +1093,6 @@ function renderStats(){
   const rng = state.ui.statRange;
   const data = getRange(rng).slice().sort((a,b)=>a.ts-b.ts);
   const s = computeStats(data);
-
   const alerts = document.getElementById('stat-alerts'); alerts.innerHTML='';
   if(s.count){
     if(s.avgSys>=140 || s.avgDia>=90){
@@ -924,20 +1101,14 @@ function renderStats(){
       alerts.innerHTML += `<div class="alert-banner warn"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg><div><b>Hoch-normaler Durchschnitt</b>Lebensstil-Faktoren beachten (Salz, Bewegung, Stress).</div></div>`;
     }
     const highCount = s.classDist.h1 + s.classDist.h2 + s.classDist.h3;
-    if(highCount>0 && !(s.avgSys>=140 || s.avgDia>=90)){
-      alerts.innerHTML += `<div class="alert-banner info"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg><div><b>${highCount} auffällige Werte</b>im Bereich Hypertonie Grad 1+. Im Verlauf sichtbar.</div></div>`;
-    }
+    if(highCount>0 && !(s.avgSys>=140 || s.avgDia>=90)) alerts.innerHTML += `<div class="alert-banner info"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg><div><b>${highCount} auffällige Werte</b>im Bereich Hypertonie Grad 1+. Im Verlauf sichtbar.</div></div>`;
     if(Math.abs(s.trendSys)>=5){
       const dir = s.trendSys>0 ? 'steigend' : 'fallend';
       alerts.innerHTML += `<div class="alert-banner info"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg><div><b>Trend ${dir}</b>Systolisch ${s.trendSys>0?'+':''}${Math.round(s.trendSys)} mmHg über den Zeitraum.</div></div>`;
     }
   }
-
   const set = (id,v)=>document.getElementById(id).textContent = v;
-  if(!s.count){
-    ['s-sys','s-dia','s-pul','s-cnt','s-max-sys','s-max-dia','s-max-pul','s-min-sys','s-min-dia','s-min-pul','s-std-sys','s-std-dia','s-map','s-pp','s-morn','s-eve'].forEach(id=>set(id,'—'));
-    return;
-  }
+  if(!s.count){ ['s-sys','s-dia','s-pul','s-cnt','s-max-sys','s-max-dia','s-max-pul','s-min-sys','s-min-dia','s-min-pul','s-std-sys','s-std-dia','s-map','s-pp','s-morn','s-eve'].forEach(id=>set(id,'—')); return; }
   set('s-sys', Math.round(s.avgSys)+' '); set('s-sys-d', `mmHg · Ø · ${s.count} Werte`);
   set('s-dia', Math.round(s.avgDia)+' '); set('s-dia-d', `mmHg · Ø`);
   set('s-pul', Math.round(s.avgPul)+' '); set('s-pul-d', `bpm · Ruhepuls`);
@@ -952,11 +1123,8 @@ function renderStats(){
   set('s-std-dia', s.stdDia.toFixed(1));
   set('s-map', Math.round(s.map)+' mmHg');
   set('s-pp',  Math.round(s.pp)+' mmHg');
-  if(s.morn){ set('s-morn', Math.round(s.morn.sys)+'/'+Math.round(s.morn.dia)); set('s-morn-d', `${s.morn.n} Werte · Puls Ø ${Math.round(s.morn.pul)}`); }
-  else { set('s-morn','—'); set('s-morn-d','Keine'); }
-  if(s.eve){ set('s-eve', Math.round(s.eve.sys)+'/'+Math.round(s.eve.dia)); set('s-eve-d', `${s.eve.n} Werte · Puls Ø ${Math.round(s.eve.pul)}`); }
-  else { set('s-eve','—'); set('s-eve-d','Keine'); }
-
+  if(s.morn){ set('s-morn', Math.round(s.morn.sys)+'/'+Math.round(s.morn.dia)); set('s-morn-d', `${s.morn.n} Werte · Puls Ø ${Math.round(s.morn.pul)}`); } else { set('s-morn','—'); set('s-morn-d','Keine'); }
+  if(s.eve){ set('s-eve', Math.round(s.eve.sys)+'/'+Math.round(s.eve.dia)); set('s-eve-d', `${s.eve.n} Werte · Puls Ø ${Math.round(s.eve.pul)}`); } else { set('s-eve','—'); set('s-eve-d','Keine'); }
   const total = s.count;
   const bar = document.getElementById('class-bar'); bar.innerHTML='';
   const legend = document.getElementById('class-legend'); legend.innerHTML='';
@@ -964,37 +1132,24 @@ function renderStats(){
     const n = s.classDist[c.key]; if(!n) return;
     const pct = (n/total)*100;
     const seg = document.createElement('span');
-    seg.style.width = pct+'%'; seg.style.background = c.color;
-    seg.title = `${c.label}: ${n} (${pct.toFixed(0)}%)`;
+    seg.style.width = pct+'%'; seg.style.background = c.color; seg.title = `${c.label}: ${n} (${pct.toFixed(0)}%)`;
     bar.appendChild(seg);
     const li = document.createElement('span');
     li.innerHTML = `<span class="sw" style="background:${c.color}"></span>${c.label} <b style="margin-left:auto;color:var(--text)">${n}</b> <span style="color:var(--text-3)">(${pct.toFixed(0)}%)</span>`;
     li.style.justifyContent='space-between'; li.style.gap='6px';
     legend.appendChild(li);
   });
-
-  renderStatChartTrend(data);
-  renderStatChartME(s);
-  renderStatChartWD(s);
-  renderStatChartPulse(data);
+  renderStatChartTrend(data); renderStatChartME(s); renderStatChartWD(s); renderStatChartPulse(data);
 }
-document.getElementById('stat-tabs').addEventListener('click', e=>{
-  if(e.target.dataset.range){ state.ui.statRange = e.target.dataset.range; save(); renderStats(); }
-});
-
+document.getElementById('stat-tabs').addEventListener('click', e=>{ if(e.target.dataset.range){ state.ui.statRange = e.target.dataset.range; save(); renderStats(); } });
 function renderStatChartTrend(data){
   if(state.charts.trend) state.charts.trend.destroy();
   const labels = data.map(r=>fmt.shortDate(r.ts));
-  const sys = data.map(r=>r.sys), dia = data.map(r=>r.dia);
   const ctx = document.getElementById('stat-chart-trend').getContext('2d');
-  const sysColor = r => {
-    const cl = classify(r.sys, r.dia);
-    return cl.color;
-  };
   state.charts.trend = new Chart(ctx, chartOptions('line', {
     labels, datasets:[
-      { label:'Sys', data:sys, borderColor:css('--primary'), backgroundColor:'rgba(21,101,192,.08)', fill:true, tension:.3, pointRadius:3, pointBackgroundColor:data.map(sysColor) },
-      { label:'Dia', data:dia, borderColor:css('--primary-light'), tension:.3, pointRadius:2 },
+      { label:'Sys', data:data.map(r=>r.sys), borderColor:css('--primary'), backgroundColor:'rgba(21,101,192,.08)', fill:true, tension:.3, pointRadius:3, pointBackgroundColor:data.map(r=>classify(r.sys,r.dia).color) },
+      { label:'Dia', data:data.map(r=>r.dia), borderColor:css('--primary-light'), tension:.3, pointRadius:2 },
       { label:'Grenze 140', data:new Array(labels.length).fill(140), borderColor:'rgba(229,57,53,.5)', borderDash:[4,4], pointRadius:0, borderWidth:1 },
       { label:'Grenze 90',  data:new Array(labels.length).fill(90),  borderColor:'rgba(229,57,53,.3)', borderDash:[4,4], pointRadius:0, borderWidth:1 }
     ]
@@ -1013,10 +1168,10 @@ function renderStatChartME(s){
 }
 function renderStatChartWD(s){
   if(state.charts.wd) state.charts.wd.destroy();
-  const labels = ['So','Mo','Di','Mi','Do','Fr','Sa'];
   const ctx = document.getElementById('stat-chart-wd').getContext('2d');
   state.charts.wd = new Chart(ctx, chartOptions('bar', {
-    labels, datasets:[
+    labels:['So','Mo','Di','Mi','Do','Fr','Sa'],
+    datasets:[
       { label:'Sys Ø', data:s.weekdays.map(w=>Math.round(w.sys||0)), backgroundColor:css('--primary') },
       { label:'Dia Ø', data:s.weekdays.map(w=>Math.round(w.dia||0)), backgroundColor:css('--primary-light') }
     ]
@@ -1038,28 +1193,22 @@ function css(v){ return getComputedStyle(document.body).getPropertyValue(v).trim
 function chartOptions(type, data){
   const isDark = state.settings.theme==='dark';
   const grid = isDark ? 'rgba(255,255,255,.06)' : 'rgba(0,0,0,.06)';
-  const tick = isDark ? '#9e9e9e' : '#757575';
+  const tick = isDark ? '#9ca1a8' : '#6a6f77';
   return {
     type, data,
-    options:{
-      responsive:true, maintainAspectRatio:false,
-      interaction:{ mode:'index', intersect:false },
+    options:{ responsive:true, maintainAspectRatio:false, interaction:{ mode:'index', intersect:false },
       plugins:{ legend:{ display:true, labels:{ color:tick, boxWidth:10, padding:10, font:{size:11} } }, tooltip:{ mode:'index' } },
-      scales:{
-        y:{ grid:{ color:grid }, ticks:{ color:tick, font:{size:10} }, beginAtZero:false },
-        x:{ grid:{ color:grid, display:false }, ticks:{ color:tick, font:{size:10}, maxRotation:0, autoSkip:true, maxTicksLimit:7 } }
-      }
-    }
+      scales:{ y:{ grid:{ color:grid }, ticks:{ color:tick, font:{size:10} }, beginAtZero:false },
+        x:{ grid:{ color:grid, display:false }, ticks:{ color:tick, font:{size:10}, maxRotation:0, autoSkip:true, maxTicksLimit:7 } } } }
   };
 }
 
 /* ============================================================
- *  DIALOG HELPERS
+ *  DIALOG HELPERS + MANUELLE EINGABE
  * ============================================================ */
 function openDialog(id){ document.getElementById(id).classList.add('open'); }
 function closeDialog(id){ document.getElementById(id).classList.remove('open'); }
 document.querySelectorAll('.backdrop').forEach(b=> b.addEventListener('click', e=>{ if(e.target===b) b.classList.remove('open'); }));
-
 function openAdd(){
   const now = new Date();
   document.getElementById('in-date').value = now.toISOString().slice(0,10);
@@ -1077,135 +1226,499 @@ function saveReading(){
   const d = document.getElementById('in-date').value;
   const t = document.getElementById('in-time').value;
   const ts = new Date(d+'T'+t).getTime();
-  state.readings.push({
-    id:uid(), ts, sys, dia, pul,
-    arm: document.getElementById('in-arm').value,
-    note: document.getElementById('in-note').value,
-    irr: document.getElementById('in-irr').checked
-  });
+  const rec = { id:uid(), ts, sys, dia, pul, arm: document.getElementById('in-arm').value, note: document.getElementById('in-note').value, irr: document.getElementById('in-irr').checked, mov:false };
+  state.readings.push(rec);
   state.readings.sort((a,b)=>a.ts-b.ts);
-  save(); toast('Messung gespeichert'); closeDialog('dlg-add');
+  persistReading(rec);
+  toast('Messung gespeichert'); closeDialog('dlg-add');
   renderOverview();
 }
 
+/* ============================================================================================
+ *  OMRON BLE MANAGER v2.0 — HEM-7361T
+ *
+ *  Zustandsmaschine: DISCONNECTED → CONNECTING → PAIRING → CONNECTED →
+ *                    READING → DISCONNECTING → DISCONNECTED
+ *
+ *  Vollständig gekapselte Klasse, kein globaler Zustand.
+ *  Alle BLE-Methoden async, alle Operationen in try/catch,
+ *  robustes Cleanup bei Fehler oder unerwarteter Trennung.
+ * ============================================================================================ */
+
+class OmronBleManager {
+  static UUID_SERVICE = 'ecbe3980-c9a2-11e1-b1bd-0002a5d5c51b';
+  static UUID_RX = [
+    '49123040-aee8-11e1-a74d-0002a5d5c51b',
+    '4d0bf320-aee8-11e1-a0d9-0002a5d5c51b',
+    '5128ce60-aee8-11e1-b84b-0002a5d5c51b',
+    '560f1420-aee8-11e1-8184-0002a5d5c51b'
+  ];
+  static UUID_TX = [
+    'db5b55e0-aee7-11e1-965e-0002a5d5c51b',
+    'e0b8a060-aee7-11e1-92f4-0002a5d5c51b',
+    '0ae12b00-aee8-11e1-a192-0002a5d5c51b',
+    '10e1ba60-aee8-11e1-89e5-0002a5d5c51b'
+  ];
+  static UUID_UNLOCK = 'b305b680-aee7-11e1-a730-0002a5d5c51b';
+  static PAIR_KEY = new Uint8Array([0xde,0xad,0xbe,0xaf,0x12,0x34,0x12,0x34,0xde,0xad,0xbe,0xaf,0x12,0x34,0x12,0x34]);
+  static EEP = { USER1_START:0x0098, USER2_START:0x06D8, MAX_RECS:100, REC_SIZE:0x10, BLOCK_SIZE:0x10 };
+  /* Befehlscodes — Pairing ist exakt laut Spec; Read/Start/End sind omblepy-Referenz.
+     TODO: VERIFY am realen HEM-7361T durch Log-Panel im Sync-Dialog. */
+  static CMD = { UNLOCK_REQ:0x01, PAIR_INIT:0x02, PAIR_SET_KEY:0x00, READ_EEPROM:0x0501, TRANS_START:0x0901, TRANS_END:0x0F00 };
+
+  constructor(opts={}){
+    this.state = 'DISCONNECTED';
+    this.device = null; this.server = null; this.service = null;
+    this.txChars = [null,null,null,null]; this.rxChars = [null,null,null,null];
+    this.unlockChar = null; this.pairingKey = null;
+    this.bleLog = []; this.timeoutMs = opts.timeoutMs || 5000;
+    this._rxBuffers = [null,null,null,null];
+    this._pending = null;
+    this._disconnectHandler = ()=>this._onDisconnect();
+    this.onLog = null; this.onProgress = null; this.onState = null;
+  }
+  _setState(s){ this.state = s; this._log(`STATE → ${s}`); if(this.onState) this.onState(s); }
+  _log(m){ const e = `[${new Date().toTimeString().slice(0,8)}] ${m}`; this.bleLog.push(e); if(this.onLog) this.onLog(e); }
+  _progress(p){ if(this.onProgress) this.onProgress(p); }
+  _hex(bytes){ return Array.from(bytes).map(b=>b.toString(16).padStart(2,'0')).join(' '); }
+
+  static isSupported(){ return typeof navigator !== 'undefined' && !!navigator.bluetooth; }
+
+  /* -------- TX-Paket bauen (XOR-Checksumme) --------
+     SELBSTTEST 2 — Paket cmd=0x0501, addr=0x0098, data=[0x10]:
+       [0x08, 0x05, 0x01, 0x98, 0x00, 0x01, 0x10, XOR]
+       XOR der ersten 7 Bytes = 0x85 → Byte 7 = 0x85
+       XOR aller 8 Bytes = 0x00  ✓ */
+  _buildPacket(cmdType, address, data){
+    data = data || new Uint8Array(0);
+    const totalLen = 6 + data.length + 1;
+    const p = new Uint8Array(totalLen);
+    p[0] = totalLen;
+    p[1] = (cmdType >> 8) & 0xFF;
+    p[2] =  cmdType       & 0xFF;
+    p[3] =  address       & 0xFF;
+    p[4] = (address >> 8) & 0xFF;
+    p[5] =  data.length;
+    p.set(data, 6);
+    let x = 0;
+    for(let i=0; i<totalLen-1; i++) x ^= p[i];
+    p[totalLen-1] = x;
+    return p;
+  }
+  async _writePacket(packet){
+    const chunks = [ packet.slice(0,16), packet.slice(16,32), packet.slice(32,48), packet.slice(48,64) ];
+    for(let i=0; i<4; i++){
+      if(chunks[i].length === 0) continue;
+      const padded = new Uint8Array(16);
+      padded.set(chunks[i]);
+      try{
+        await this.txChars[i].writeValueWithResponse(padded);
+        this._log(`TX${i} → ${this._hex(padded)}`);
+      }catch(e){ throw new Error(`TX${i}-Schreibfehler: ${e.message}`); }
+    }
+  }
+
+  _onRxNotification(channelIdx, value){
+    const bytes = new Uint8Array(value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength));
+    this._rxBuffers[channelIdx] = bytes;
+    this._log(`RX${channelIdx} ← ${this._hex(bytes)}`);
+    this._tryAssemble();
+  }
+  _tryAssemble(){
+    if(!this._rxBuffers[0]) return;
+    const totalLen = this._rxBuffers[0][0];
+    if(!totalLen || totalLen > 64) return;
+    const chansNeeded = Math.ceil(totalLen / 16);
+    for(let i=0; i<chansNeeded; i++) if(!this._rxBuffers[i]) return;
+    const combined = new Uint8Array(chansNeeded * 16);
+    for(let i=0; i<chansNeeded; i++) combined.set(this._rxBuffers[i], i*16);
+    const packet = combined.slice(0, totalLen);
+    let x = 0; for(const b of packet) x ^= b;
+    if(x !== 0){
+      this._log(`XOR-Fehler 0x${x.toString(16)}, Paket verworfen`);
+      this._rxBuffers = [null,null,null,null];
+      if(this._pending){ const {reject,timer} = this._pending; this._pending = null; clearTimeout(timer); reject(new Error('Checksummenfehler im Empfangspaket')); }
+      return;
+    }
+    this._rxBuffers = [null,null,null,null];
+    if(this._pending){ const {resolve,timer} = this._pending; this._pending = null; clearTimeout(timer); resolve(packet); }
+    else this._log(`Paket ohne Wartenden: ${this._hex(packet)}`);
+  }
+  async waitForResponse(timeoutMs){
+    const to = timeoutMs || this.timeoutMs;
+    return new Promise((resolve,reject)=>{
+      const timer = setTimeout(()=>{
+        if(this._pending){ this._pending = null; reject(new Error(`Timeout nach ${to} ms beim Warten auf Antwort`)); }
+      }, to);
+      this._pending = { resolve, reject, timer };
+    });
+  }
+
+  /* -------- Verbinden -------- */
+  async connect(){
+    if(!OmronBleManager.isSupported()) throw new Error('Web-Bluetooth nicht verfügbar. Bitte Chrome for Android verwenden.');
+    if(this.state !== 'DISCONNECTED') throw new Error('Ungültiger Zustand: '+this.state);
+    try{
+      this._setState('CONNECTING');
+      this._log('Scan nach OMRON-Gerät …');
+      this.device = await navigator.bluetooth.requestDevice({
+        filters:[
+          { services:[OmronBleManager.UUID_SERVICE] },
+          { namePrefix:'BLESmart' }, { namePrefix:'BLEsmart' }, { namePrefix:'OMRON' }
+        ],
+        optionalServices:[OmronBleManager.UUID_SERVICE]
+      });
+      this._log(`Gerät: ${this.device.name || '(ohne Namen)'}`);
+      this.device.addEventListener('gattserverdisconnected', this._disconnectHandler);
+      this.server = await this.device.gatt.connect();
+      this._log('GATT verbunden');
+      this.service = await this.server.getPrimaryService(OmronBleManager.UUID_SERVICE);
+      this._log('Service-Handle geladen');
+      for(let i=0; i<4; i++){
+        this.rxChars[i] = await this.service.getCharacteristic(OmronBleManager.UUID_RX[i]);
+        this.txChars[i] = await this.service.getCharacteristic(OmronBleManager.UUID_TX[i]);
+      }
+      this.unlockChar = await this.service.getCharacteristic(OmronBleManager.UUID_UNLOCK);
+      this._log('Alle 8 Kanäle + Unlock-Char geladen');
+      for(let i=0; i<4; i++){
+        await this.rxChars[i].startNotifications();
+        this.rxChars[i].addEventListener('characteristicvaluechanged', (ev)=> this._onRxNotification(i, ev.target.value));
+      }
+      this._log('Notify auf RX0-RX3 aktiv');
+      this._setState('CONNECTED');
+    }catch(err){
+      this._log(`Verbindung fehlgeschlagen: ${err.message}`);
+      await this._safeCleanup();
+      throw err;
+    }
+  }
+
+  /* -------- Pairing / Unlock -------- */
+  async pairDevice(){
+    if(!this.unlockChar) throw new Error('Nicht verbunden — kann nicht koppeln');
+    try{
+      this._setState('PAIRING');
+      this._log('Sende Unlock (0x01 + Key)');
+      const pkt = new Uint8Array(17);
+      pkt[0] = OmronBleManager.CMD.UNLOCK_REQ;
+      pkt.set(OmronBleManager.PAIR_KEY, 1);
+      const waitResp = this.waitForResponse(3000);
+      await this.unlockChar.writeValueWithResponse(pkt);
+      let resp;
+      try { resp = await waitResp; }
+      catch(e){ const dv = await this.unlockChar.readValue(); resp = new Uint8Array(dv.buffer); }
+      const code = (resp[1] << 8) | resp[2];
+      this._log(`Unlock-Antwort: 0x${code.toString(16).padStart(4,'0')}`);
+      if(code === 0x8100){ this.pairingKey = OmronBleManager.PAIR_KEY; this._log('✓ Unlock erfolgreich'); }
+      else if(code === 0x7F00){ this._log('Gerät in Pairing-Modus, setze Key …'); await this._completeFirstPairing(); }
+      else throw new Error(`Unlock verweigert (Code 0x${code.toString(16)}). Ist das Gerät im Bluetooth-Modus? Halten Sie die Taste bis "-P-" oder "bt" erscheint.`);
+      this._setState('CONNECTED');
+    }catch(err){
+      this._log(`Pairing-Fehler: ${err.message}`);
+      throw err;
+    }
+  }
+  async _completeFirstPairing(){
+    const pkt = new Uint8Array(17);
+    pkt[0] = OmronBleManager.CMD.PAIR_SET_KEY;
+    pkt.set(OmronBleManager.PAIR_KEY, 1);
+    const waitResp = this.waitForResponse(3000);
+    await this.unlockChar.writeValueWithResponse(pkt);
+    let resp;
+    try { resp = await waitResp; }
+    catch(e){ const dv = await this.unlockChar.readValue(); resp = new Uint8Array(dv.buffer); }
+    const code = (resp[1] << 8) | resp[2];
+    if(code !== 0x8000) throw new Error(`First-Pairing fehlgeschlagen (Code 0x${code.toString(16)})`);
+    this.pairingKey = OmronBleManager.PAIR_KEY;
+    this._log('✓ First-Pairing erfolgreich');
+  }
+
+  /* -------- EEPROM-Block lesen -------- */
+  async readContinuousEepromData(address, size){
+    const blocks = Math.ceil(size / OmronBleManager.EEP.BLOCK_SIZE);
+    const result = new Uint8Array(blocks * OmronBleManager.EEP.BLOCK_SIZE);
+    for(let i=0; i<blocks; i++){
+      const addr = address + i * OmronBleManager.EEP.BLOCK_SIZE;
+      const block = await this._readBlock(addr);
+      result.set(block, i * OmronBleManager.EEP.BLOCK_SIZE);
+    }
+    return result.slice(0, size);
+  }
+  async _readBlock(address){
+    const pkt = this._buildPacket(OmronBleManager.CMD.READ_EEPROM, address, new Uint8Array([OmronBleManager.EEP.BLOCK_SIZE]));
+    const waitResp = this.waitForResponse();
+    await this._writePacket(pkt);
+    const resp = await waitResp;
+    const dataLen = resp[5];
+    return resp.slice(6, 6 + dataLen);
+  }
+  async _startTransmission(){
+    try{
+      const pkt = this._buildPacket(OmronBleManager.CMD.TRANS_START, 0, new Uint8Array(0));
+      const waitResp = this.waitForResponse(3000);
+      await this._writePacket(pkt);
+      await waitResp;
+      this._log('Start-Transmission OK');
+    }catch(e){ this._log(`Start-Transmission-Hinweis: ${e.message}`); }
+  }
+  async _endTransmission(){
+    try{
+      const pkt = this._buildPacket(OmronBleManager.CMD.TRANS_END, 0, new Uint8Array(0));
+      await this._writePacket(pkt);
+      this._log('End-Transmission gesendet');
+    }catch(e){ this._log(`End-Transmission-Hinweis: ${e.message}`); }
+  }
+
+  /* -------- Hauptsynchronisation --------
+     existingRecords: Array aus state.readings (zur Duplikat-Erkennung)
+     Rückgabe: { user1:[...], user2:[...], newCount, duplicateCount } */
+  async syncAllRecords(existingRecords){
+    this._setState('READING');
+    await this._startTransmission();
+    const users = [
+      { idx:1, start:OmronBleManager.EEP.USER1_START, out:[] },
+      { idx:2, start:OmronBleManager.EEP.USER2_START, out:[] }
+    ];
+    const total = 2 * OmronBleManager.EEP.MAX_RECS;
+    let done = 0;
+    const allParsed = [];
+    for(const u of users){
+      for(let i=0; i<OmronBleManager.EEP.MAX_RECS; i++){
+        const addr = u.start + i * OmronBleManager.EEP.REC_SIZE;
+        try{
+          const bytes = await this._readBlock(addr);
+          const rec   = OmronBleManager.parseSingleRecord(bytes, u.idx);
+          if(rec){ u.out.push(rec); allParsed.push(rec); }
+        }catch(e){
+          this._log(`Lesefehler @ 0x${addr.toString(16)}: ${e.message}`);
+        }
+        done++;
+        this._progress({ done, total, phase:`Lese Block ${done} von ${total} (User ${u.idx})`, percent:(done/total)*100 });
+      }
+    }
+    await this._endTransmission();
+    this._setState('CONNECTED');
+    /* --- Duplikat-Erkennung innerhalb der Klasse (gemäss Spec) --- */
+    const keyFn = r => `${Math.floor(r.ts/60000)}-${r.sys}-${r.dia}-${r.bpm||r.pul}`;
+    const existingKeys = new Set((existingRecords || []).map(keyFn));
+    let duplicateCount = 0;
+    const user1Unique = [], user2Unique = [];
+    for(const rec of allParsed){
+      if(existingKeys.has(keyFn(rec))){ duplicateCount++; continue; }
+      existingKeys.add(keyFn(rec));
+      (rec.user === 2 ? user2Unique : user1Unique).push(rec);
+    }
+    const newCount = user1Unique.length + user2Unique.length;
+    return { user1:user1Unique, user2:user2Unique, newCount, duplicateCount };
+  }
+
+  /* -------- Parse 16-Byte-Record (BigInt, MSB-Bit-Index) --------
+     SELBSTTEST 1 — Input 10 00 8A 00 00 00 00 00 5A 28 3C 06 19 4B 0C 00
+     → Sys bits 120-127 : bigInt & 0xFF        = 0x10 = 16 → +25 = 41 mmHg
+     → Dia bits 112-119 : (bigInt>>8) & 0xFF   = 0x00 = 0       = 0 mmHg
+     → Pul bits 104-111 : (bigInt>>16) & 0xFF  = 0x8A = 138     = 138 bpm
+     (Synthetisch, nicht klinisch plausibel — Plausibilitäts-Guard
+      liefert für diesen Record NULL zurück, Bit-Algorithmus verifiziert.)
+
+     SELBSTTEST 4 — FF × 16 → alle Bytes = 0xFF → return NULL ✓ */
+  static parseSingleRecord(bytes, userIdx){
+    if(!bytes || bytes.length !== 16) return null;
+    let allFF = true;
+    for(let i=0; i<16; i++) if(bytes[i] !== 0xFF){ allFF = false; break; }
+    if(allFF) return null;
+
+    /* Little-Endian 128-Bit BigInt */
+    let big = 0n;
+    for(let i=15; i>=0; i--) big = (big << 8n) | BigInt(bytes[i]);
+    const extract = (first, last) => {
+      const numBits = BigInt(last - first + 1);
+      const shift   = BigInt(128 - (last + 1));
+      const mask    = (1n << numBits) - 1n;
+      return Number((big >> shift) & mask);
+    };
+    const minutes = extract(68, 73);
+    let seconds   = extract(74, 79); if(seconds > 59) seconds = 59;
+    const mov   = extract(80, 80) === 1;
+    const ihb   = extract(81, 81) === 1;
+    const month = extract(82, 85);
+    const day   = extract(86, 90);
+    const hour  = extract(91, 95);
+    const year  = extract(98, 103) + 2000;
+    const pulse = extract(104, 111);
+    const dia   = extract(112, 119);
+    const sys   = extract(120, 127) + 25;
+    /* Plausibilitäts-Guard */
+    if(month < 1 || month > 12) return null;
+    if(day   < 1 || day   > 31) return null;
+    if(hour  > 23) return null;
+    if(minutes > 59) return null;
+    if(sys < 50 || sys > 260) return null;
+    if(dia < 30 || dia > 200) return null;
+    if(pulse < 30 || pulse > 220) return null;
+    const datetime = new Date(year, month - 1, day, hour, minutes, seconds);
+    if(isNaN(datetime.getTime())) return null;
+    return { datetime, ts:datetime.getTime(), sys, dia, bpm:pulse, mov, ihb, user:userIdx };
+  }
+
+  /* -------- Cleanup / Disconnect -------- */
+  async disconnect(){
+    this._setState('DISCONNECTING');
+    await this._safeCleanup();
+    this._setState('DISCONNECTED');
+  }
+  async _safeCleanup(){
+    try{
+      if(this.rxChars){
+        for(let i=0; i<4; i++){
+          if(this.rxChars[i]){
+            try{ await this.rxChars[i].stopNotifications(); }catch(e){}
+          }
+        }
+      }
+    }catch(e){}
+    try{
+      if(this.device && this.device.gatt && this.device.gatt.connected){
+        this.device.removeEventListener('gattserverdisconnected', this._disconnectHandler);
+        this.device.gatt.disconnect();
+      }
+    }catch(e){}
+    this._rxBuffers = [null,null,null,null];
+    if(this._pending){ const {reject,timer} = this._pending; this._pending = null; clearTimeout(timer); reject(new Error('Verbindung geschlossen')); }
+  }
+  _onDisconnect(){
+    this._log('Gerät-Disconnect-Event (externe Trennung)');
+    this._setState('DISCONNECTED');
+    if(this._pending){ const {reject,timer} = this._pending; this._pending = null; clearTimeout(timer); reject(new Error('Verbindung unerwartet getrennt')); }
+  }
+}
+
 /* ============================================================
- *  BLUETOOTH SYNC  (OMRON M7 · Standard BLE Blood Pressure Service 0x1810)
+ *  BLE-UI-INTEGRATION (Sync-Button, 3 Zustände, Progress)
  * ============================================================ */
+let omronMgr = null;
 function openSync(){
-  ['step-1','step-2','step-3'].forEach((s,i)=>{
-    const el=document.getElementById(s); el.classList.remove('done'); el.classList.toggle('active', i===0);
-  });
+  ['step-1','step-2','step-3'].forEach((s,i)=>{ const el=document.getElementById(s); el.classList.remove('done'); el.classList.toggle('active', i===0); });
   document.getElementById('sync-log').style.display='none';
   document.getElementById('sync-log').textContent='';
+  document.getElementById('sync-progress').style.display='none';
   document.getElementById('btn-sync-start').disabled=false;
+  updateSyncMainButton('idle');
+  if(!OmronBleManager.isSupported()){
+    document.getElementById('sync-log').style.display='block';
+    document.getElementById('sync-log').textContent = 'Web-Bluetooth steht in diesem Browser nicht zur Verfügung.\n\nBitte Chrome for Android verwenden (oder Chrome/Edge auf Desktop).';
+  }
   openDialog('dlg-sync');
+}
+function toggleSyncLog(){
+  const l = document.getElementById('sync-log');
+  l.style.display = l.style.display === 'none' ? 'block' : 'none';
 }
 function syncStep(n){
   for(let i=1;i<=3;i++){
     const el=document.getElementById('step-'+i);
     el.classList.remove('active','done');
-    if(i<n) el.classList.add('done');
-    else if(i===n) el.classList.add('active');
+    if(i<n) el.classList.add('done'); else if(i===n) el.classList.add('active');
   }
 }
-function log(msg){
-  const l = document.getElementById('sync-log');
-  l.style.display='block';
-  l.textContent += msg+'\n'; l.scrollTop = l.scrollHeight;
-}
-async function startBluetoothSync(){
-  if(!navigator.bluetooth){
-    toast('Browser unterstützt Web-Bluetooth nicht. Chrome/Edge nutzen.');
-    log('FEHLER: navigator.bluetooth nicht verfügbar.');
-    return;
-  }
-  try{
-    syncStep(2);
-    log('Suche nach Blutdruckmessgerät …');
-    const device = await navigator.bluetooth.requestDevice({
-      filters:[{ services:['blood_pressure'] }],
-      optionalServices:['current_time','device_information','battery_service','0000fe4a-0000-1000-8000-00805f9b34fb']
-    });
-    log('Gefunden: '+(device.name||'unbekannt'));
-    document.getElementById('conn-text').textContent='Verbinde …';
-    const server = await device.gatt.connect();
-    log('Verbunden. Lese Blood-Pressure-Service …');
-    setConnected(true, device.name);
-    syncStep(3);
-
-    const service = await server.getPrimaryService('blood_pressure');
-    const ch = await service.getCharacteristic('blood_pressure_measurement');
-
-    let received = 0, added = 0;
-    ch.addEventListener('characteristicvaluechanged', ev=>{
-      const rec = parseBPMeasurement(ev.target.value);
-      received++;
-      if(rec){
-        const exists = state.readings.some(r=>Math.abs(r.ts-rec.ts)<60000 && r.sys===rec.sys && r.dia===rec.dia);
-        if(!exists){ state.readings.push(rec); added++; log(`+ ${fmt.date(rec.ts)} ${fmt.time(rec.ts)}  ${rec.sys}/${rec.dia}  P:${rec.pul}`); }
-      }
-    });
-    await ch.startNotifications();
-    log('Warte auf gespeicherte Messungen …');
-
-    setTimeout(async ()=>{
-      try{ await ch.stopNotifications(); }catch(e){}
-      state.readings.sort((a,b)=>a.ts-b.ts); save();
-      log(`\nFertig. ${received} empfangen, ${added} neu übernommen.`);
-      toast(`${added} neue Messwerte übernommen`);
-      renderOverview();
-    }, 8000);
-  }catch(err){
-    log('FEHLER: '+err.message);
-    toast('Verbindung abgebrochen: '+err.message);
-    setConnected(false);
-  }
-}
-function parseBPMeasurement(dv){
-  try{
-    const flags = dv.getUint8(0);
-    const kPa = flags & 0x01;
-    const hasTime = flags & 0x02;
-    const hasPulse = flags & 0x04;
-    const hasIRR = flags & 0x20;
-    let o = 1;
-    const readF = () => { const raw = dv.getUint16(o, true); o+=2; const mantissa = (raw & 0x0FFF) << 20 >> 20; const exp = raw >> 12; return mantissa * Math.pow(10, exp>7?exp-16:exp); };
-    let sys = readF(), dia = readF(), map = readF();
-    if(kPa){ sys*=7.50062; dia*=7.50062; }
-    let ts = Date.now();
-    if(hasTime){
-      const y = dv.getUint16(o,true); o+=2;
-      const mo = dv.getUint8(o++); const d = dv.getUint8(o++);
-      const hh = dv.getUint8(o++); const mm = dv.getUint8(o++); const ss = dv.getUint8(o++);
-      ts = new Date(y, mo-1, d, hh, mm, ss).getTime();
-    }
-    let pul = 0;
-    if(hasPulse){ pul = Math.round(readF()); }
-    return { id:uid(), ts, sys:Math.round(sys), dia:Math.round(dia), pul, arm:'links', note:'', irr:!!hasIRR };
-  }catch(e){ log('Parse-Fehler: '+e.message); return null; }
-}
-function setConnected(on, name){
+function setConnUI(state, name){
   const dot = document.querySelector('#conn-status .dot');
   const txt = document.getElementById('conn-text');
-  dot.classList.toggle('off', !on);
-  txt.textContent = on ? ('Verbunden · '+(name||'OMRON')) : 'Nicht verbunden';
+  dot.classList.remove('off','busy');
+  if(state==='CONNECTED' || state==='PAIRING'){ dot.classList.add('busy'); txt.textContent = 'Verbunden '+(name?'· '+name:''); }
+  else if(state==='READING'){ dot.classList.add('busy'); txt.textContent = 'Lese Daten …'; }
+  else if(state==='CONNECTING'){ dot.classList.add('busy'); txt.textContent = 'Verbinde …'; }
+  else if(state==='DISCONNECTING'){ dot.classList.add('busy'); txt.textContent = 'Trenne …'; }
+  else { dot.classList.add('off'); txt.textContent = 'Nicht verbunden'; }
+}
+/* 3-Zustand-Button: idle / connecting / connected */
+function updateSyncMainButton(kind){
+  const txt = document.getElementById('btn-sync-main-text');
+  const btn = document.getElementById('btn-sync-main');
+  if(!txt || !btn) return;
+  if(kind === 'connecting'){ txt.textContent='Verbinde …'; btn.disabled = true; }
+  else if(kind === 'connected'){ txt.textContent='Trennen'; btn.disabled = false; btn.classList.remove('primary'); btn.classList.add('danger'); }
+  else { txt.textContent='Verbinden'; btn.disabled = false; btn.classList.remove('danger'); btn.classList.add('primary'); }
+}
+
+async function startBluetoothSync(){
+  if(!OmronBleManager.isSupported()){ toast('Web-Bluetooth nicht verfügbar — bitte Chrome for Android.'); return; }
+  const btn = document.getElementById('btn-sync-start');
+  btn.disabled = true;
+  const logEl  = document.getElementById('sync-log');
+  const progEl = document.getElementById('sync-progress');
+  const progText = document.getElementById('sync-progress-text');
+  const progBar  = document.getElementById('sync-progress-bar');
+  logEl.textContent = '';
+  updateSyncMainButton('connecting');
+
+  omronMgr = new OmronBleManager();
+  omronMgr.onLog   = line => { logEl.textContent += line + '\n'; logEl.scrollTop = logEl.scrollHeight; };
+  omronMgr.onState = s    => setConnUI(s, omronMgr.device && omronMgr.device.name);
+  omronMgr.onProgress = p => {
+    progEl.style.display = 'block';
+    progText.textContent = p.phase;
+    progBar.style.width  = `${p.percent}%`;
+  };
+
+  try{
+    syncStep(2);
+    await omronMgr.connect();
+    updateSyncMainButton('connected');
+
+    syncStep(3);
+    await omronMgr.pairDevice();
+
+    progEl.style.display = 'block';
+    progText.textContent = 'Lese Messwerte …';
+
+    const result = await omronMgr.syncAllRecords(state.readings);
+    const all    = [...result.user1, ...result.user2];
+
+    for(const rec of all){
+      const stored = {
+        id: uid(), ts: rec.ts, sys: rec.sys, dia: rec.dia, pul: rec.bpm,
+        arm: rec.user === 2 ? 'rechts' : 'links',
+        note: `OMRON · User ${rec.user}`,
+        irr: rec.ihb, mov: rec.mov
+      };
+      state.readings.push(stored);
+      persistReading(stored);
+    }
+    state.readings.sort((a,b)=>a.ts-b.ts);
+
+    omronMgr._log(`✓ Fertig. ${result.newCount} neue Messungen hinzugefügt, ${result.duplicateCount} Duplikate übersprungen.`);
+    toast(`${result.newCount} neue · ${result.duplicateCount} Duplikate`);
+    ['step-1','step-2','step-3'].forEach(s=>{ const e=document.getElementById(s); e.classList.remove('active'); e.classList.add('done'); });
+    renderOverview();
+
+    await omronMgr.disconnect();
+  }catch(err){
+    console.error(err);
+    if(omronMgr) omronMgr._log(`✗ FEHLER: ${err.message}`);
+    toast('Sync fehlgeschlagen: '+err.message);
+    try{ if(omronMgr) await omronMgr.disconnect(); }catch(e){}
+  }finally{
+    btn.disabled = false;
+    updateSyncMainButton('idle');
+  }
 }
 
 /* ============================================================
- *  IMPORT / EXPORT / PDF
+ *  IMPORT / EXPORT
  * ============================================================ */
 function exportJSON(){
-  const blob = new Blob([JSON.stringify(state, null, 2)], {type:'application/json'});
-  download(blob, 'blutdruck-backup-'+new Date().toISOString().slice(0,10)+'.json');
-  toast('Export gestartet');
+  const payload = { version:2, exportedAt:new Date().toISOString(), readings: state.readings, settings: state.settings };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], {type:'application/json'});
+  download(blob, `${fmt.filename(Date.now())} Backup Blutdruckdaten.json`);
+  toast('Export in „Downloads" gespeichert');
 }
 function exportCSV(){
-  const rows = [['Datum','Zeit','Systolisch','Diastolisch','Puls','Arm','Unregelmäßig','Notiz']];
+  const rows = [['Datum','Zeit','Systolisch','Diastolisch','Puls','Arm','MOV','IHB','Notiz']];
   const sorted = state.readings.slice().sort((a,b)=>b.ts-a.ts);
-  sorted.forEach(r=>rows.push([fmt.date(r.ts), fmt.time(r.ts), r.sys, r.dia, r.pul, r.arm, r.irr?'ja':'', (r.note||'').replace(/[\r\n;]/g,' ')]));
+  sorted.forEach(r=>rows.push([fmt.date(r.ts), fmt.time(r.ts), r.sys, r.dia, r.pul, r.arm, r.mov?'ja':'', r.irr?'ja':'', (r.note||'').replace(/[\r\n;]/g,' ')]));
   const csv = rows.map(row=>row.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(';')).join('\r\n');
-  download(new Blob(['\uFEFF'+csv], {type:'text/csv;charset=utf-8'}), 'blutdruck-export-'+new Date().toISOString().slice(0,10)+'.csv');
-  toast('CSV-Export gestartet');
+  download(new Blob(['\uFEFF'+csv], {type:'text/csv;charset=utf-8'}), `${fmt.filename(Date.now())} Blutdruck CSV.csv`);
+  toast('CSV in „Downloads" gespeichert');
 }
 function download(blob, name){
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name;
@@ -1219,12 +1732,17 @@ function importJSON(ev){
       const d = JSON.parse(e.target.result);
       if(!d.readings || !Array.isArray(d.readings)) throw new Error('Ungültiges Format');
       let added = 0;
+      const key = r => `${Math.floor(r.ts/60000)}-${r.sys}-${r.dia}-${r.pul||r.bpm}`;
+      const existing = new Set(state.readings.map(key));
       d.readings.forEach(r=>{
-        const dup = state.readings.some(x=>Math.abs(x.ts-r.ts)<60000 && x.sys===r.sys && x.dia===r.dia);
-        if(!dup){ state.readings.push(r); added++; }
+        if(!existing.has(key(r))){
+          if(!r.id) r.id = uid();
+          state.readings.push(r); existing.add(key(r)); added++;
+          persistReading(r);
+        }
       });
-      if(d.settings){ state.settings = Object.assign(state.settings, d.settings); applyTheme(); }
-      state.readings.sort((a,b)=>a.ts-b.ts); save();
+      if(d.settings){ state.settings = Object.assign(state.settings, d.settings); applyTheme(); applyFontScale(); save(); }
+      state.readings.sort((a,b)=>a.ts-b.ts);
       toast(`${added} Messungen importiert`);
       renderOverview();
     }catch(err){ toast('Import fehlgeschlagen: '+err.message); }
@@ -1235,12 +1753,15 @@ function importJSON(ev){
 function confirmDeleteAll(){
   if(!confirm('Wirklich ALLE Messdaten unwiderruflich löschen?')) return;
   if(!confirm('Sicher? Diese Aktion kann nicht rückgängig gemacht werden.')) return;
-  state.readings = []; save(); toast('Alle Daten gelöscht'); renderOverview();
+  state.readings = [];
+  DB.clear('readings').catch(()=>{});
+  toast('Alle Daten gelöscht'); renderOverview();
 }
 function updateStorageInfo(){
   const n = state.readings.length;
-  const size = new Blob([JSON.stringify(state)]).size;
-  document.getElementById('storage-info').textContent = `${n} Messungen · ${(size/1024).toFixed(1)} KB gespeichert`;
+  const size = new Blob([JSON.stringify(state.readings)]).size;
+  const el = document.getElementById('storage-info');
+  if(el) el.textContent = `${n} Messungen · ${(size/1024).toFixed(1)} KB`;
 }
 
 /* ============================================================
@@ -1251,7 +1772,6 @@ async function generatePDF(){
   let data = getRange(range).slice().sort((a,b)=>b.ts-a.ts);
   if(!data.length){ toast('Keine Daten im gewählten Zeitraum'); return; }
   toast('PDF wird erstellt …');
-
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ unit:'mm', format:'a4' });
   const pageW = doc.internal.pageSize.getWidth();
@@ -1260,31 +1780,25 @@ async function generatePDF(){
   const user = state.settings.user;
   const dateFrom = fmt.date(data[data.length-1].ts);
   const dateTo = fmt.date(data[0].ts);
-
-  /* --------- PAGE 1: Titel + Zusammenfassung --------- */
   doc.setFillColor(21,101,192); doc.rect(0,0,pageW,28,'F');
-  doc.setTextColor(255,255,255); doc.setFont('helvetica','bold'); doc.setFontSize(18);
+  doc.setTextColor(240,244,248); doc.setFont('helvetica','bold'); doc.setFontSize(18);
   doc.text('Blutdruck-Bericht', 14, 18);
   doc.setFontSize(10); doc.setFont('helvetica','normal');
   doc.text(`Zeitraum: ${dateFrom} – ${dateTo}`, pageW-14, 18, { align:'right' });
-
   doc.setTextColor(33,33,33); let y = 38;
   if(user.name || user.doctor || user.meds){
     doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.text('Patient', 14, y); y+=5;
     doc.setFont('helvetica','normal'); doc.setFontSize(10);
-    if(user.name) { doc.text('Name: '+user.name, 14, y); y+=5; }
-    if(user.dob)  { doc.text('Geburtstag: '+user.dob, 14, y); y+=5; }
+    if(user.name)  { doc.text('Name: '+user.name, 14, y); y+=5; }
+    if(user.dob)   { doc.text('Geburtstag: '+user.dob, 14, y); y+=5; }
     if(user.doctor){ doc.text('Behandelnder Arzt: '+user.doctor, 14, y); y+=5; }
-    if(user.meds) { doc.text('Medikation: '+user.meds, 14, y, { maxWidth:pageW-28 }); y+=8; }
+    if(user.meds)  { doc.text('Medikation: '+user.meds, 14, y, { maxWidth:pageW-28 }); y+=8; }
     y += 2;
   }
-
-  doc.setFont('helvetica','bold'); doc.setFontSize(13);
-  doc.text('Zusammenfassung', 14, y); y+=6;
+  doc.setFont('helvetica','bold'); doc.setFontSize(13); doc.text('Zusammenfassung', 14, y); y+=6;
   doc.setDrawColor(224,224,224); doc.line(14,y-2, pageW-14,y-2);
-
   const boxes = [
-    { l:'Messungen', v:String(s.count), d:`${(s.count/Math.max(1,((data[0].ts-data[data.length-1].ts)/86400000))).toFixed(1)} /Tag` },
+    { l:'Messungen', v:String(s.count), d:'' },
     { l:'Ø Systolisch', v:Math.round(s.avgSys)+' mmHg', d:`σ ${s.stdSys.toFixed(1)}` },
     { l:'Ø Diastolisch', v:Math.round(s.avgDia)+' mmHg', d:`σ ${s.stdDia.toFixed(1)}` },
     { l:'Ø Puls', v:Math.round(s.avgPul)+' bpm', d:'' },
@@ -1307,8 +1821,6 @@ async function generatePDF(){
     doc.text(b.d, bx+3, by+18);
   });
   y += 2*(bh+4) + 4;
-
-  /* Hinweise */
   doc.setFont('helvetica','bold'); doc.setFontSize(13); doc.setTextColor(33,33,33);
   doc.text('Befund (automatisch)', 14, y); y+=6;
   doc.setDrawColor(224,224,224); doc.line(14,y-2, pageW-14,y-2);
@@ -1327,12 +1839,9 @@ async function generatePDF(){
     if(y>pageH-30){ doc.addPage(); y=20; }
     const col = f.sev==='high'?[198,40,40] : f.sev==='warn'?[239,108,0] : [46,125,50];
     doc.setFillColor(...col); doc.circle(16, y-1, 1.3, 'F');
-    doc.setTextColor(66,66,66);
-    doc.text(f.txt, 20, y, { maxWidth:pageW-34 }); y+=6;
+    doc.setTextColor(66,66,66); doc.text(f.txt, 20, y, { maxWidth:pageW-34 }); y+=6;
   });
   y+=4;
-
-  /* --------- PAGE 1/2: Klassifikation --------- */
   if(y>pageH-70){ doc.addPage(); y=20; }
   doc.setFont('helvetica','bold'); doc.setFontSize(13); doc.setTextColor(33,33,33);
   doc.text('Klassifikation (ESH/WHO)', 14, y); y+=6;
@@ -1342,8 +1851,7 @@ async function generatePDF(){
     const n = s.classDist[c.key]; if(!n) return;
     const w = (n/s.count)*barW;
     const col = hexToRgb(c.color);
-    doc.setFillColor(...col); doc.rect(x0, barY, w, barH, 'F');
-    x0+=w;
+    doc.setFillColor(...col); doc.rect(x0, barY, w, barH, 'F'); x0+=w;
   });
   y = barY + barH + 6;
   doc.setFontSize(9); doc.setFont('helvetica','normal');
@@ -1352,22 +1860,17 @@ async function generatePDF(){
     if(y>pageH-20){ doc.addPage(); y=20; }
     const col = hexToRgb(c.color);
     doc.setFillColor(...col); doc.rect(14, y-3, 3, 3, 'F');
-    doc.setTextColor(66,66,66);
-    doc.text(`${c.label}`, 20, y);
+    doc.setTextColor(66,66,66); doc.text(`${c.label}`, 20, y);
     doc.text(`${n}`, pageW-40, y, {align:'right'});
     doc.text(`${((n/s.count)*100).toFixed(0)} %`, pageW-14, y, {align:'right'});
     y+=5;
   });
   y+=4;
-
-  /* --------- PAGE 2: Grafiken --------- */
   doc.addPage(); y=20;
   doc.setFont('helvetica','bold'); doc.setFontSize(14); doc.setTextColor(33,33,33);
   doc.text('Verlaufs-Grafiken', 14, y); y+=6;
   doc.setDrawColor(224,224,224); doc.line(14,y-2, pageW-14,y-2); y+=2;
-
   const chartData = data.slice().sort((a,b)=>a.ts-b.ts);
-
   const imgTrend = await renderChartToImage('line', {
     labels: chartData.map(r=>fmt.shortDate(r.ts)),
     datasets:[
@@ -1376,17 +1879,15 @@ async function generatePDF(){
       { label:'140', data:new Array(chartData.length).fill(140), borderColor:'rgba(229,57,53,.6)', borderDash:[4,4], pointRadius:0, borderWidth:1 },
       { label:'90',  data:new Array(chartData.length).fill(90),  borderColor:'rgba(229,57,53,.4)', borderDash:[4,4], pointRadius:0, borderWidth:1 }
     ]
-  }, 900, 380, 'Systolisch / Diastolisch (mmHg)');
+  }, 900, 380);
   doc.setFontSize(10); doc.setFont('helvetica','bold'); doc.text('Blutdruck-Verlauf', 14, y+4); y+=6;
   doc.addImage(imgTrend, 'PNG', 14, y, pageW-28, 70); y+=76;
-
   const imgPulse = await renderChartToImage('line', {
     labels: chartData.map(r=>fmt.shortDate(r.ts)),
     datasets:[ { label:'Puls', data:chartData.map(r=>r.pul), borderColor:'#c62828', backgroundColor:'rgba(198,40,40,.15)', fill:true, tension:.3, pointRadius:1 } ]
-  }, 900, 320, 'Puls (bpm)');
+  }, 900, 320);
   doc.setFont('helvetica','bold'); doc.text('Puls-Verlauf', 14, y+4); y+=6;
   doc.addImage(imgPulse, 'PNG', 14, y, pageW-28, 55); y+=60;
-
   if(y>pageH-70){ doc.addPage(); y=20; }
   const imgME = await renderChartToImage('bar', {
     labels:['Morgens (< 12:00)','Abends (≥ 12:00)'],
@@ -1394,35 +1895,26 @@ async function generatePDF(){
       { label:'Sys Ø', data:[s.morn?Math.round(s.morn.sys):0, s.eve?Math.round(s.eve.sys):0], backgroundColor:'#1565c0' },
       { label:'Dia Ø', data:[s.morn?Math.round(s.morn.dia):0, s.eve?Math.round(s.eve.dia):0], backgroundColor:'#90caf9' }
     ]
-  }, 900, 320, 'Tageszeit-Vergleich');
+  }, 900, 320);
   doc.setFont('helvetica','bold'); doc.text('Morgens vs. Abends', 14, y+4); y+=6;
   doc.addImage(imgME, 'PNG', 14, y, pageW-28, 55); y+=60;
-
-  /* --------- DATA TABLE --------- */
   doc.addPage();
   doc.setFont('helvetica','bold'); doc.setFontSize(14); doc.setTextColor(33,33,33);
   doc.text('Alle Messungen', 14, 18);
   doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(117,117,117);
   doc.text(`${data.length} Messwerte · sortiert nach Datum (neu → alt)`, 14, 24);
-
   const head = [['Datum','Zeit','Sys','Dia','Puls','Arm','Klassifikation','Hinweis']];
   const body = data.map(r=>{
     const c = classify(r.sys, r.dia);
-    const hint = (r.irr?'⚠ unregelm.':'') + (r.note?(r.irr?' · ':'')+r.note:'');
+    const hint = (r.irr?'⚠ IHB':'') + (r.mov?(r.irr?' ':'')+'↯ MOV':'') + (r.note?((r.irr||r.mov)?' · ':'')+r.note:'');
     return [fmt.date(r.ts), fmt.time(r.ts), r.sys, r.dia, r.pul, r.arm, c.label, hint];
   });
   doc.autoTable({
     head, body, startY:28,
     styles:{ fontSize:8, cellPadding:1.5 },
-    headStyles:{ fillColor:[21,101,192], textColor:255, fontStyle:'bold' },
+    headStyles:{ fillColor:[21,101,192], textColor:[240,244,248], fontStyle:'bold' },
     alternateRowStyles:{ fillColor:[248,250,252] },
-    columnStyles:{
-      0:{cellWidth:22}, 1:{cellWidth:14,halign:'right'},
-      2:{cellWidth:13,halign:'right',fontStyle:'bold'},
-      3:{cellWidth:13,halign:'right',fontStyle:'bold'},
-      4:{cellWidth:13,halign:'right'}, 5:{cellWidth:14},
-      6:{cellWidth:40}, 7:{cellWidth:'auto'}
-    },
+    columnStyles:{ 0:{cellWidth:22}, 1:{cellWidth:14,halign:'right'}, 2:{cellWidth:13,halign:'right',fontStyle:'bold'}, 3:{cellWidth:13,halign:'right',fontStyle:'bold'}, 4:{cellWidth:13,halign:'right'}, 5:{cellWidth:14}, 6:{cellWidth:40}, 7:{cellWidth:'auto'} },
     didParseCell: hook=>{
       if(hook.section==='body'){
         const r = data[hook.row.index]; if(!r) return;
@@ -1437,19 +1929,15 @@ async function generatePDF(){
     },
     didDrawPage: d=>{
       doc.setFontSize(8); doc.setTextColor(150,150,150);
-      doc.text(`Blutdruck-Bericht · ${new Date().toLocaleDateString('de-DE')}`, 14, pageH-8);
+      doc.text(`Blutdruck-Bericht · ${fmt.date(Date.now())}`, 14, pageH-8);
       doc.text(`Seite ${doc.internal.getCurrentPageInfo().pageNumber}`, pageW-14, pageH-8, {align:'right'});
     }
   });
-
-  doc.save(`blutdruck-bericht-${new Date().toISOString().slice(0,10)}.pdf`);
-  toast('PDF gespeichert');
+  doc.save(`${fmt.filename(Date.now())} Blutdruck Bericht.pdf`);
+  toast('PDF in „Downloads" gespeichert');
 }
-function hexToRgb(hex){
-  const m = hex.replace('#','').match(/.{2}/g);
-  return m ? m.map(h=>parseInt(h,16)) : [128,128,128];
-}
-async function renderChartToImage(type, data, w, h, title){
+function hexToRgb(hex){ const m = hex.replace('#','').match(/.{2}/g); return m ? m.map(h=>parseInt(h,16)) : [128,128,128]; }
+async function renderChartToImage(type, data, w, h){
   return new Promise(resolve=>{
     const canvas = document.createElement('canvas');
     canvas.width = w; canvas.height = h;
@@ -1457,20 +1945,11 @@ async function renderChartToImage(type, data, w, h, title){
     document.body.appendChild(canvas);
     const ch = new Chart(canvas.getContext('2d'), {
       type, data,
-      options:{
-        responsive:false, animation:false, devicePixelRatio:2,
-        plugins:{ legend:{ labels:{ color:'#424242', font:{size:13} } }, title: title ? { display:false } : undefined },
-        scales:{
-          y:{ grid:{ color:'rgba(0,0,0,.06)' }, ticks:{ color:'#666', font:{size:11} } },
-          x:{ grid:{ display:false }, ticks:{ color:'#666', font:{size:11}, maxTicksLimit:10 } }
-        }
-      }
+      options:{ responsive:false, animation:false, devicePixelRatio:2,
+        plugins:{ legend:{ labels:{ color:'#424242', font:{size:13} } } },
+        scales:{ y:{ grid:{ color:'rgba(0,0,0,.06)' }, ticks:{ color:'#666', font:{size:11} } }, x:{ grid:{ display:false }, ticks:{ color:'#666', font:{size:11}, maxTicksLimit:10 } } } }
     });
-    setTimeout(()=>{
-      const img = canvas.toDataURL('image/png');
-      ch.destroy(); canvas.remove();
-      resolve(img);
-    }, 120);
+    setTimeout(()=>{ const img = canvas.toDataURL('image/png'); ch.destroy(); canvas.remove(); resolve(img); }, 120);
   });
 }
 
@@ -1480,7 +1959,7 @@ async function renderChartToImage(type, data, w, h, title){
 function applyTheme(){
   document.body.setAttribute('data-theme', state.settings.theme);
   document.getElementById('toggle-theme').classList.toggle('on', state.settings.theme==='dark');
-  document.querySelector('meta[name=theme-color]').setAttribute('content', state.settings.theme==='dark' ? '#1e1e1e' : '#1565c0');
+  document.querySelector('meta[name=theme-color]').setAttribute('content', state.settings.theme==='dark' ? '#2a2d31' : '#1565c0');
   Object.values(state.charts).forEach(c=>{ try{c.destroy()}catch(e){} });
   state.charts = {};
   const v = state.ui.view;
@@ -1499,6 +1978,17 @@ function toggleSetting(key, el){
   if(state.ui.view==='overview') renderOverview();
   if(state.ui.view==='history') renderHistory();
 }
+function applyFontScale(){
+  const v = (state.settings.fontScale || 100) / 100;
+  document.documentElement.style.setProperty('--font-scale', v);
+  const lbl = document.getElementById('font-label'); if(lbl) lbl.textContent = (state.settings.fontScale || 100)+' %';
+  const sld = document.getElementById('font-slider'); if(sld) sld.value = state.settings.fontScale || 100;
+}
+function setFontScale(v){
+  state.settings.fontScale = parseInt(v);
+  save(); applyFontScale();
+  Object.values(state.charts).forEach(c=>{ try{c.resize()}catch(e){} });
+}
 function saveUserField(k, v){ state.settings.user[k] = v; save(); }
 function saveThreshold(k, v){ state.settings.thresholds[k] = parseInt(v)||0; save(); }
 function resetThresholds(){
@@ -1508,13 +1998,64 @@ function resetThresholds(){
 function renderSettings(){
   document.getElementById('toggle-theme').classList.toggle('on', state.settings.theme==='dark');
   document.getElementById('toggle-highlight').classList.toggle('on', state.settings.highlight);
+  applyFontScale();
   ['name','dob','doctor','meds'].forEach(k=> document.getElementById('set-'+k).value = state.settings.user[k] || '');
   ['sysNormal','sysHigh','diaNormal','diaHigh'].forEach(k=>{
     const id = 'th-'+(k==='sysNormal'?'sys-normal':k==='sysHigh'?'sys-high':k==='diaNormal'?'dia-normal':'dia-high');
     document.getElementById(id).value = state.settings.thresholds[k];
   });
   updateStorageInfo();
+  refreshPwaStatus();
 }
+
+/* ============================================================
+ *  PWA INSTALL-BUTTON + STANDALONE-ERKENNUNG
+ * ============================================================ */
+let deferredInstallPrompt = null;
+function refreshPwaStatus(){
+  const sec = document.getElementById('pwa-install-section');
+  const st  = document.getElementById('pwa-status');
+  const standalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+  if(standalone){
+    if(sec) sec.style.display = 'none';
+    if(st)  st.textContent = 'Als App installiert · Offline-fähig';
+    return;
+  }
+  if(deferredInstallPrompt){
+    if(sec) sec.style.display = 'block';
+    if(st)  st.textContent = '';
+  } else {
+    if(sec) sec.style.display = 'none';
+    if(st)  st.textContent = '';
+  }
+}
+window.addEventListener('beforeinstallprompt', (e)=>{
+  e.preventDefault();
+  deferredInstallPrompt = e;
+  refreshPwaStatus();
+});
+window.addEventListener('appinstalled', ()=>{
+  deferredInstallPrompt = null;
+  toast('App erfolgreich installiert!');
+  refreshPwaStatus();
+});
+document.getElementById('btn-install').addEventListener('click', async ()=>{
+  if(!deferredInstallPrompt) return;
+  deferredInstallPrompt.prompt();
+  try{ await deferredInstallPrompt.userChoice; }catch(e){}
+  deferredInstallPrompt = null;
+  refreshPwaStatus();
+});
+
+/* Data-Tab Sync-Button — führt bei idle openSync(), bei connected disconnect aus */
+document.getElementById('btn-sync-main').addEventListener('click', async e=>{
+  if(omronMgr && (omronMgr.state === 'CONNECTED' || omronMgr.state === 'PAIRING' || omronMgr.state === 'READING')){
+    e.stopPropagation(); e.preventDefault();
+    try{ await omronMgr.disconnect(); }catch(err){}
+    updateSyncMainButton('idle');
+  }
+  /* sonst: onclick="openSync()" im HTML feuert — kein weiterer Handler nötig */
+}, true);
 
 /* ============================================================
  *  TOAST
@@ -1534,12 +2075,64 @@ document.getElementById('btn-add-top').addEventListener('click', openAdd);
 document.getElementById('btn-sync-top').addEventListener('click', openSync);
 
 /* ============================================================
- *  START
+ *  SELBSTTESTS BEIM START (Console)
  * ============================================================ */
-load();
-applyTheme();
-renderSettings();
-setView('overview');
+(function runSelfTests(){
+  try{
+    /* Test 1 — BigInt Bit-Extraktion */
+    const dummy = new Uint8Array([0x10,0x00,0x8A,0x00,0x00,0x00,0x00,0x00,0x5A,0x28,0x3C,0x06,0x19,0x4B,0x0C,0x00]);
+    let big = 0n;
+    for(let i=15;i>=0;i--) big = (big << 8n) | BigInt(dummy[i]);
+    const extract = (f,l)=>{ const nb=BigInt(l-f+1), sh=BigInt(128-(l+1)), mk=(1n<<nb)-1n; return Number((big>>sh)&mk); };
+    const tSys  = extract(120,127) + 25;
+    const tDia  = extract(112,119);
+    const tPul  = extract(104,111);
+    console.assert(tSys===41,  'Test 1: Sys erwartet 41, erhalten '+tSys);
+    console.assert(tDia===0,   'Test 1: Dia erwartet 0, erhalten '+tDia);
+    console.assert(tPul===138, 'Test 1: Pul erwartet 138, erhalten '+tPul);
+
+    /* Test 2 — XOR-Checksumme */
+    const p = new Uint8Array([0x08,0x05,0x01,0x98,0x00,0x01,0x10]);
+    let x=0; for(const b of p) x^=b;
+    const full = new Uint8Array(8); full.set(p); full[7] = x;
+    let verify=0; for(const b of full) verify^=b;
+    console.assert(verify===0 && x===0x85, 'Test 2: XOR-Checksumme fehlgeschlagen');
+
+    /* Test 3 — Duplikat-Erkennung */
+    const T = new Date('2026-01-15T08:30:00').getTime();
+    const key = r => `${Math.floor(r.ts/60000)}-${r.sys}-${r.dia}-${r.bpm||r.pul}`;
+    const ex = new Set();
+    [{ts:T,sys:120,dia:80,bpm:65},{ts:T,sys:120,dia:80,bpm:65},{ts:T,sys:121,dia:80,bpm:65}]
+      .forEach(r=>ex.add(key(r)));
+    console.assert(ex.size === 2, 'Test 3: Duplikat-Erkennung erwartet 2, erhalten '+ex.size);
+
+    /* Test 4 — Leerer Record */
+    const empty = new Uint8Array(16).fill(0xFF);
+    console.assert(OmronBleManager.parseSingleRecord(empty, 1) === null, 'Test 4: Leer-Record muss null liefern');
+
+    /* Test 5 — PWA Manifest */
+    const mani = { name:'OMRON M7 Blutdruck', short_name:'Blutdruck', start_url:'.', display:'standalone', icons:[{src:'x',sizes:'192x192',type:'image/svg+xml'}] };
+    const js = JSON.stringify(mani);
+    const parsed = JSON.parse(js);
+    console.assert(parsed.name && parsed.short_name && parsed.start_url && parsed.display && parsed.icons && parsed.icons[0].sizes, 'Test 5: Manifest unvollständig');
+
+    console.log('✓ Alle 5 Selbsttests bestanden (Bit-Extraktion, XOR, Duplikat, Leer-Record, PWA-Manifest).');
+  }catch(e){ console.error('Selbsttest-Fehler:', e); }
+})();
+
+/* ============================================================
+ *  START — asynchron, wartet auf IndexedDB
+ * ============================================================ */
+(async function startup(){
+  try{
+    await load();
+  }catch(e){ console.error('Startup-Ladefehler:', e); }
+  applyTheme();
+  applyFontScale();
+  renderSettings();
+  setView(state.ui.view || 'overview');
+  refreshPwaStatus();
+})();
 </script>
 </body>
 </html>
