@@ -717,10 +717,11 @@
       <div class="alert-banner info" id="hint-first-pair" style="margin-bottom:10px">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
         <div>
-          <b>Erstmaliges Koppeln</b>
-          <div style="margin-top:4px">1. Halten Sie die <b>Bluetooth-Taste</b> am OMRON M7 gedrückt, bis „<b>-P-</b>" im Display erscheint.</div>
-          <div>2. Tippen Sie dann auf „<b>Verbinden</b>".</div>
-          <div style="margin-top:4px;opacity:.8">Das Koppeln dauert einmalig ca. 10 Sekunden.</div>
+          <b>Erstmaliges Koppeln &middot; Taste durchgehend gedrückt halten</b>
+          <div style="margin-top:4px">1. <b>Bluetooth-Taste</b> am OMRON M7 drücken und <b>gedrückt halten</b>, bis „<b>-P-</b>" im Display blinkt.</div>
+          <div>2. Taste <b>weiter gedrückt halten</b> und auf „<b>Verbinden</b>" tippen.</div>
+          <div>3. Taste <b>erst loslassen</b>, wenn die Messwerte gelesen wurden.</div>
+          <div style="margin-top:6px;opacity:.85">Das Gerät macht seinen Datenkanal nur sichtbar, solange die Taste aktiv gedrückt ist. Ohne Dauerdruck meldet es nur Standard-Bluetooth-Services.</div>
         </div>
       </div>
 
@@ -1318,20 +1319,47 @@ class OmronBleManager {
 
   static isSupported(){ return typeof navigator !== 'undefined' && !!navigator.bluetooth; }
 
+  /* Unterstützte Vendor-Service-UUIDs (verschiedene Firmware-Varianten) */
+  static VENDOR_UUIDS = [
+    'ecbe3980-c9a2-11e1-b1bd-0002a5d5c51b', /* Standard HEM-7361T      */
+    'ecbe3982-c9a2-11e1-b1bd-0002a5d5c51b'  /* Alt-Variante manche FW  */
+  ];
+
   /* Hilfsfunktion: filtert den Vendor-Service aus der GATT-Service-Discovery.
-     Case-insensitiver UUID-Vergleich. Bei Fehlschlag wirft sie einen Fehler,
-     der ALLE gemeldeten Service-UUIDs enthält — unverzichtbar für Diagnose,
-     wenn das OMRON je nach Firmware unterschiedliche UUIDs zurückgibt. */
+     Prüft beide UUID-Varianten, case-insensitiv. Bei Fehlschlag:
+     · Wenn NUR Standard-Services (0000xxxx-…) gemeldet werden:
+       → spezifische Fehlermeldung "Gerät nicht im Datenübertragungsmodus"
+         mit detaillierter Handlungsanleitung.
+     · Sonst → generische Fehlermeldung mit der vollen UUID-Liste. */
   static _filterVendorService(allServices){
-    const vendorUUID = OmronBleManager.UUID_SERVICE.toLowerCase();
-    const found = (allServices || []).find(s => String(s.uuid).toLowerCase() === vendorUUID);
-    if(found) return found;
-    const list = (allServices && allServices.length)
-      ? allServices.map(s => s.uuid).join('\n  · ')
-      : '(keine)';
+    const list = allServices || [];
+    for(const uuid of OmronBleManager.VENDOR_UUIDS){
+      const hit = list.find(s => String(s.uuid).toLowerCase() === uuid);
+      if(hit) return hit;
+    }
+    const uuidStr = list.length ? list.map(s => s.uuid).join('\n  · ') : '(keine)';
+    /* "Nur Standard-Services" heisst: alle gemeldeten UUIDs sind im
+       Bluetooth-SIG-Bereich 0000xxxx-0000-1000-8000-00805f9b34fb */
+    const SIG = /^0000[0-9a-f]{4}-0000-1000-8000-00805f9b34fb$/i;
+    const onlyStandard = list.length > 0 && list.every(s => SIG.test(String(s.uuid)));
+    if(onlyStandard){
+      throw new Error(
+        'Das OMRON M7 ist NICHT im Datenübertragungsmodus.\n\n' +
+        'Es werden nur Standard-Bluetooth-Services gemeldet:\n  · ' + uuidStr + '\n\n' +
+        'Der Vendor-Service wird vom Gerät nur exponiert, während die\n' +
+        'Bluetooth-Taste gedrückt ist. Bitte exakt in dieser Reihenfolge:\n\n' +
+        '1. OMRON Connect App beenden (Recent-Apps wegwischen)\n' +
+        '2. Bluetooth-Taste am OMRON M7 DRÜCKEN UND GEDRÜCKT HALTEN\n' +
+        '   bis "-P-" im Display blinkt\n' +
+        '3. Taste WEITER GEDRÜCKT HALTEN und "Verbinden" tippen\n' +
+        '4. Taste erst loslassen, wenn die Messwerte gelesen werden\n\n' +
+        'Wenn Bluetooth bereits gekoppelt ist: ggf. in Android\n' +
+        'Einstellungen → Bluetooth → Gerät "vergessen" und neu koppeln.'
+      );
+    }
     throw new Error(
       'OMRON-Service nicht gefunden.\n\n' +
-      'Das Gerät meldet folgende Services:\n  · ' + list + '\n\n' +
+      'Das Gerät meldet folgende Services:\n  · ' + uuidStr + '\n\n' +
       'Bitte diesen Log-Auszug kopieren und melden.'
     );
   }
@@ -1452,13 +1480,31 @@ class OmronBleManager {
       /* getPrimaryService(UUID) scheitert, wenn das Gerät diesen Service
          in der Discovery nicht zurückgibt — selbst wenn er in
          optionalServices steht (Web Bluetooth CG Issues #451 / #513).
-         Daher ALLE Services abrufen, loggen und selbst filtern. */
+         Daher ALLE Services abrufen, loggen und selbst filtern.
+         Retry-Schleife: der Vendor-Service erscheint manchmal erst nach
+         ein paar Sekunden, während das Gerät im Transfer-Modus ist. */
       let allServices = [];
-      try{
-        allServices = await this.server.getPrimaryServices();
-      }catch(e){
-        this._log(`getPrimaryServices-Fehler: ${e.message}`);
-        throw new Error(`Service-Discovery fehlgeschlagen (${e.message}).\nBitte Log kopieren und melden.`);
+      const MAX_TRIES = 4;
+      const RETRY_DELAY = 1500;                    /* ms */
+      const VENDOR_SET = new Set(OmronBleManager.VENDOR_UUIDS);
+      for(let attempt = 1; attempt <= MAX_TRIES; attempt++){
+        try{
+          allServices = await this.server.getPrimaryServices();
+        }catch(e){
+          this._log(`Versuch ${attempt}/${MAX_TRIES} — getPrimaryServices-Fehler: ${e.message}`);
+          if(attempt === MAX_TRIES) throw new Error(`Service-Discovery fehlgeschlagen (${e.message}).\nBitte Log kopieren und melden.`);
+          await new Promise(r => setTimeout(r, RETRY_DELAY));
+          continue;
+        }
+        const hasVendor = allServices.some(s => VENDOR_SET.has(String(s.uuid).toLowerCase()));
+        if(hasVendor){
+          this._log(`Versuch ${attempt}/${MAX_TRIES} — Vendor-Service erscheint in Liste`);
+          break;
+        }
+        if(attempt < MAX_TRIES){
+          this._log(`Versuch ${attempt}/${MAX_TRIES} — Vendor-Service noch nicht sichtbar, warte ${RETRY_DELAY} ms (Taste am Gerät weiter gedrückt halten!)`);
+          await new Promise(r => setTimeout(r, RETRY_DELAY));
+        }
       }
       this._log(`Gefundene Services (${allServices.length}):`);
       allServices.forEach(s => this._log(`  · ${s.uuid}`));
@@ -2401,9 +2447,27 @@ document.getElementById('btn-sync-top').addEventListener('click', openSync);
     catch(e){ s3err = e; }
     console.assert(s3err
       && s3err.message.includes('00001810-0000-1000-8000-00805f9b34fb')
-      && s3err.message.includes('00001800-0000-1000-8000-00805f9b34fb')
-      && /Bitte diesen Log-Auszug kopieren/.test(s3err.message),
-      'Test S3: Fehlermeldung muss alle vorhandenen UUIDs + Log-Hinweis enthalten.');
+      && s3err.message.includes('00001800-0000-1000-8000-00805f9b34fb'),
+      'Test S3: Fehlermeldung muss alle vorhandenen UUIDs enthalten.');
+
+    /* Test S4 — NUR Standard-Services (0000xxxx-…) → spezifische Diagnose-Message */
+    let s4err = null;
+    try{ OmronBleManager._filterVendorService([
+      { uuid:'00001800-0000-1000-8000-00805f9b34fb' },
+      { uuid:'00001801-0000-1000-8000-00805f9b34fb' },
+      { uuid:'0000180a-0000-1000-8000-00805f9b34fb' }
+    ]); }
+    catch(e){ s4err = e; }
+    console.assert(s4err
+      && /NICHT im Datenübertragungsmodus/.test(s4err.message)
+      && /gedrückt halten/i.test(s4err.message)
+      && /-P-/.test(s4err.message),
+      'Test S4: Bei nur Standard-Services muss Diagnose-Message mit "gedrückt halten" und "-P-" erscheinen.');
+
+    /* Test S5 — Alt-Vendor-UUID ecbe3982 wird ebenfalls akzeptiert */
+    const altVendor = { uuid:'ecbe3982-c9a2-11e1-b1bd-0002a5d5c51b' };
+    const s5svc = OmronBleManager._filterVendorService([fakeOther, altVendor]);
+    console.assert(s5svc === altVendor, 'Test S5: Alt-Variante ecbe3982-… muss als Vendor-Service erkannt werden.');
 
     /* Tests P2/P3/P4 asynchron sequentiell — sonst racet omronIsPaired */
     (async ()=>{
@@ -2429,7 +2493,7 @@ document.getElementById('btn-sync-top').addEventListener('click', openSync);
       console.assert(caught && isGerman, 'Test P4: Deutsche Pairing-Fehlermeldung erwartet, bekommen: '+msg);
 
       omronIsPaired = false;   /* Production-Zustand: nach Tests immer false */
-      console.log('✓ Alle 13 Selbsttests bestanden (Bit-Extraktion, XOR, Duplikat, Leer-Record, PWA-Manifest, P1a Filter, P1b getPrimaryServices, P2 Unlock, P3 Pair-Flow, P4 Timeout, S1 Leere-Service-Liste, S2 Vendor-UUID-Match, S3 Fehlende-UUID-Liste).');
+      console.log('✓ Alle 15 Selbsttests bestanden (Bit-Extraktion, XOR, Duplikat, Leer-Record, PWA-Manifest, P1a Filter, P1b getPrimaryServices, P2 Unlock, P3 Pair-Flow, P4 Timeout, S1 Leere-Service-Liste, S2 Vendor-UUID-Match, S3 Fehlende-UUID-Liste, S4 Nur-Standard-Services, S5 Alt-Vendor-UUID).');
     })();
   }catch(e){ console.error('Selbsttest-Fehler:', e); }
 })();
