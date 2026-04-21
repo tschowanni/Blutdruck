@@ -1,0 +1,1545 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1565c0">
+<title>Blutdruck · OMRON M7</title>
+<style>
+  :root{
+    --primary:#1565c0;
+    --primary-light:#1976d2;
+    --primary-dark:#0d47a1;
+    --primary-50:#e3f2fd;
+    --primary-100:#bbdefb;
+    --bg:#fafafa;
+    --surface:#ffffff;
+    --surface-2:#f5f5f5;
+    --border:#e0e0e0;
+    --border-2:#eeeeee;
+    --text:#212121;
+    --text-2:#424242;
+    --text-3:#757575;
+    --text-4:#9e9e9e;
+    --ok:#2e7d32;
+    --ok-bg:#e8f5e9;
+    --warn:#ef6c00;
+    --warn-bg:#fff3e0;
+    --danger:#c62828;
+    --danger-bg:#ffebee;
+    --danger-dark:#b71c1c;
+    --info:#0277bd;
+    --info-bg:#e1f5fe;
+    --purple:#6a1b9a;
+    --purple-bg:#f3e5f5;
+    --shadow-1:0 1px 2px rgba(0,0,0,.08),0 1px 3px rgba(0,0,0,.04);
+    --shadow-2:0 2px 4px rgba(0,0,0,.12),0 2px 6px rgba(0,0,0,.06);
+    --shadow-app:0 2px 4px rgba(0,0,0,.12);
+    --radius:8px;
+    --radius-sm:6px;
+  }
+  [data-theme="dark"]{
+    --primary:#64b5f6;
+    --primary-light:#90caf9;
+    --primary-dark:#42a5f5;
+    --primary-50:#0d2a47;
+    --primary-100:#0d3a61;
+    --bg:#121212;
+    --surface:#1e1e1e;
+    --surface-2:#262626;
+    --border:#2e2e2e;
+    --border-2:#333333;
+    --text:#e0e0e0;
+    --text-2:#bdbdbd;
+    --text-3:#9e9e9e;
+    --text-4:#757575;
+    --ok:#81c784;
+    --ok-bg:#1b3a1d;
+    --warn:#ffb74d;
+    --warn-bg:#3d2a10;
+    --danger:#ef5350;
+    --danger-bg:#3d1a1a;
+    --danger-dark:#ef5350;
+    --info:#4fc3f7;
+    --info-bg:#0d2a47;
+    --purple:#ba68c8;
+    --purple-bg:#2a1230;
+    --shadow-1:0 1px 3px rgba(0,0,0,.4);
+    --shadow-2:0 2px 6px rgba(0,0,0,.5);
+    --shadow-app:0 2px 4px rgba(0,0,0,.5);
+  }
+  *,*::before,*::after{box-sizing:border-box}
+  html,body{margin:0;padding:0;font-family:"Roboto","Segoe UI",system-ui,sans-serif;background:var(--bg);color:var(--text);-webkit-font-smoothing:antialiased;overscroll-behavior-y:contain}
+  body{padding-bottom:calc(72px + env(safe-area-inset-bottom));min-height:100vh}
+  button{font-family:inherit;cursor:pointer}
+  input,select,textarea{font-family:inherit}
+
+  /* ---------- App bar ---------- */
+  .app-bar{background:var(--primary);color:#fff;padding:14px 16px 12px;box-shadow:var(--shadow-app);position:sticky;top:0;z-index:40;padding-top:calc(14px + env(safe-area-inset-top))}
+  .app-bar-row{display:flex;justify-content:space-between;align-items:center}
+  .app-bar h1{margin:0;font-size:18px;font-weight:500;display:flex;gap:10px;align-items:center;letter-spacing:.2px}
+  .app-bar .ic{display:flex;gap:6px}
+  .app-bar .icbtn{background:transparent;border:none;color:#fff;padding:8px;border-radius:50%;display:flex;align-items:center;justify-content:center}
+  .app-bar .icbtn:active{background:rgba(255,255,255,.15)}
+  .app-bar .status{display:inline-flex;gap:6px;align-items:center;font-size:11px;color:rgba(255,255,255,.85);margin-top:4px;letter-spacing:.3px}
+  .status .dot{width:7px;height:7px;border-radius:50%;background:#69f0ae;box-shadow:0 0 6px #69f0ae}
+  .status .dot.off{background:#ef5350;box-shadow:0 0 6px #ef5350}
+
+  /* ---------- Views ---------- */
+  .view{display:none;padding:14px 14px 20px}
+  .view.active{display:block}
+
+  /* ---------- Cards ---------- */
+  .card{background:var(--surface);border-radius:var(--radius);padding:14px;box-shadow:var(--shadow-1);margin-bottom:12px}
+  .card.wide{padding:18px}
+  .card-head{padding:14px 16px;border-bottom:1px solid var(--border-2);display:flex;justify-content:space-between;align-items:center}
+  .card-head h4{margin:0;font-size:14px;font-weight:500;color:var(--text)}
+  .card-head a,.card-head button.link{background:none;border:none;padding:0;font-size:12px;color:var(--primary);font-weight:500;letter-spacing:.3px;text-transform:uppercase;text-decoration:none;cursor:pointer}
+  .section{background:var(--surface);border-radius:var(--radius);box-shadow:var(--shadow-1);margin-bottom:12px;overflow:hidden}
+  .section-body{padding:14px 16px}
+
+  .l{font-size:10px;color:var(--text-3);font-weight:500;text-transform:uppercase;letter-spacing:.6px;display:flex;align-items:center;gap:6px}
+  .v{font-size:28px;font-weight:400;margin-top:6px;color:var(--text);line-height:1.05;letter-spacing:-.5px}
+  .d{font-size:11px;color:var(--text-3);margin-top:6px}
+  .d .up{color:var(--ok);font-weight:500}
+  .d .down{color:var(--danger);font-weight:500}
+
+  /* ---------- Hero reading ---------- */
+  .hero-card{position:relative}
+  .hero-v{font-size:60px;font-weight:300;letter-spacing:-2.5px;margin:4px 0 2px;line-height:1;color:var(--text)}
+  .hero-v .sys{color:var(--primary)}
+  .hero-v .sep{color:var(--text-4);font-weight:300;padding:0 2px}
+  .hero-v .dia{color:var(--primary-light)}
+  .hero-sub{font-size:13px;color:var(--text-3);margin-top:4px}
+  .hero-sub strong{color:var(--text-2);font-weight:500}
+  .hero-top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+
+  /* ---------- Grids ---------- */
+  .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
+  .grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px}
+
+  /* ---------- Chips ---------- */
+  .chip{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:14px;font-size:11px;font-weight:500;line-height:1.4}
+  .chip.normal{background:var(--ok-bg);color:var(--ok)}
+  .chip.elev{background:var(--warn-bg);color:var(--warn)}
+  .chip.high{background:var(--danger-bg);color:var(--danger)}
+  .chip.info{background:var(--info-bg);color:var(--info)}
+  .chip.flat{background:var(--surface-2);color:var(--text-2)}
+  .chip .dt{width:6px;height:6px;border-radius:50%;display:inline-block}
+  .chip.normal .dt{background:var(--ok)}
+  .chip.elev .dt{background:var(--warn)}
+  .chip.high .dt{background:var(--danger)}
+  .chip.info .dt{background:var(--info)}
+
+  /* ---------- Lists ---------- */
+  .list .item{padding:12px 16px;border-bottom:1px solid var(--border-2);display:grid;grid-template-columns:1fr auto auto;gap:12px;align-items:center}
+  .list .item:last-child{border-bottom:none}
+  .list .item .dt-col{color:var(--text);font-size:14px}
+  .list .item .dt-col small{display:block;color:var(--text-4);font-size:11px;margin-top:1px}
+  .list .item .bp-col{font-size:15px;font-weight:500;color:var(--primary);letter-spacing:-.3px;text-align:right;min-width:72px}
+  .list .item .bp-col small{color:var(--text-4);font-weight:400;font-size:11px;display:block;margin-top:1px}
+  .list .item .flag{display:inline-flex;align-items:center;gap:4px}
+  .list .item.alert{background:linear-gradient(90deg,rgba(198,40,40,.05),transparent)}
+  [data-theme="dark"] .list .item.alert{background:linear-gradient(90deg,rgba(239,83,80,.08),transparent)}
+
+  /* ---------- Bottom nav ---------- */
+  .bottom-nav{position:fixed;bottom:0;left:0;right:0;background:var(--surface);border-top:1px solid var(--border);padding:6px 4px calc(6px + env(safe-area-inset-bottom));display:flex;z-index:40;box-shadow:0 -1px 4px rgba(0,0,0,.06)}
+  .nav-btn{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:8px 4px;background:transparent;border:none;color:var(--text-3);font-size:10px;font-weight:500;letter-spacing:.3px;border-radius:8px;transition:background .15s}
+  .nav-btn.active{color:var(--primary)}
+  .nav-btn:active{background:var(--surface-2)}
+  .nav-btn svg{width:22px;height:22px}
+
+  /* ---------- Buttons ---------- */
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:11px 16px;border:none;border-radius:var(--radius-sm);font-size:13px;font-weight:500;letter-spacing:.4px;text-transform:uppercase;cursor:pointer;transition:background .15s}
+  .btn.primary{background:var(--primary);color:#fff;box-shadow:0 2px 4px rgba(21,101,192,.3)}
+  .btn.primary:active{background:var(--primary-dark)}
+  .btn.danger{background:var(--danger);color:#fff;box-shadow:0 2px 4px rgba(198,40,40,.3)}
+  .btn.ghost{background:var(--surface);color:var(--primary);border:1px solid var(--border)}
+  .btn.outline{background:transparent;color:var(--text);border:1px solid var(--border)}
+  .btn-row{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .btn-row .full{grid-column:span 2}
+  .btn-stack>.btn{width:100%;margin-bottom:8px}
+  .btn svg{width:16px;height:16px}
+
+  /* ---------- Tabs for history/stats filter ---------- */
+  .range-tabs{display:flex;gap:6px;overflow-x:auto;padding:4px 0 12px;scrollbar-width:none}
+  .range-tabs::-webkit-scrollbar{display:none}
+  .range-tab{background:var(--surface);border:1px solid var(--border);color:var(--text-2);padding:6px 12px;border-radius:14px;font-size:12px;font-weight:500;white-space:nowrap}
+  .range-tab.active{background:var(--primary);color:#fff;border-color:var(--primary)}
+
+  /* ---------- Stats specific ---------- */
+  .stat-tile{background:var(--surface);border-radius:var(--radius);padding:12px 14px;box-shadow:var(--shadow-1);position:relative;overflow:hidden}
+  .stat-tile .l{font-size:10px}
+  .stat-tile .v{font-size:22px;margin-top:4px;font-weight:500;letter-spacing:-.3px}
+  .stat-tile .v small{font-size:12px;color:var(--text-3);font-weight:400;margin-left:3px}
+  .stat-tile .d{font-size:10px}
+  .stat-tile.ok{border-left:3px solid var(--ok)}
+  .stat-tile.warn{border-left:3px solid var(--warn)}
+  .stat-tile.high{border-left:3px solid var(--danger)}
+  .stat-tile.info{border-left:3px solid var(--info)}
+
+  .class-bar{display:flex;height:12px;border-radius:6px;overflow:hidden;background:var(--surface-2);margin:10px 0 6px}
+  .class-bar span{display:block;transition:width .3s}
+  .class-legend{display:grid;grid-template-columns:1fr 1fr;gap:6px 14px;font-size:11px;color:var(--text-2);margin-top:8px}
+  .class-legend span{display:inline-flex;align-items:center;gap:6px}
+  .class-legend .sw{width:10px;height:10px;border-radius:2px;display:inline-block;flex-shrink:0}
+
+  .chart-wrap{position:relative;padding:12px 10px 4px;height:230px}
+  .chart-wrap.sm{height:180px}
+  .chart-wrap.lg{height:280px}
+  .empty{padding:26px 16px;text-align:center;color:var(--text-3);font-size:13px}
+  .empty svg{width:40px;height:40px;color:var(--text-4);display:block;margin:0 auto 10px}
+
+  .alert-banner{background:var(--danger-bg);color:var(--danger);border-radius:var(--radius);padding:12px 14px;margin-bottom:12px;display:flex;gap:10px;align-items:flex-start;font-size:13px}
+  .alert-banner svg{flex-shrink:0;margin-top:1px}
+  .alert-banner b{display:block;margin-bottom:2px}
+  .alert-banner.warn{background:var(--warn-bg);color:var(--warn)}
+  .alert-banner.info{background:var(--info-bg);color:var(--info)}
+
+  /* ---------- Settings ---------- */
+  .setting{display:flex;justify-content:space-between;align-items:center;padding:14px 16px;border-bottom:1px solid var(--border-2)}
+  .setting:last-child{border-bottom:none}
+  .setting .txt{flex:1;padding-right:10px}
+  .setting .txt .t{font-size:14px;color:var(--text);font-weight:500}
+  .setting .txt .s{font-size:12px;color:var(--text-3);margin-top:2px}
+
+  /* toggle */
+  .toggle{position:relative;width:44px;height:24px;background:var(--border);border-radius:12px;cursor:pointer;transition:background .2s;flex-shrink:0}
+  .toggle.on{background:var(--primary)}
+  .toggle::after{content:"";position:absolute;top:2px;left:2px;width:20px;height:20px;background:#fff;border-radius:50%;transition:transform .2s;box-shadow:0 1px 3px rgba(0,0,0,.2)}
+  .toggle.on::after{transform:translateX(20px)}
+
+  /* segmented */
+  .seg{display:inline-flex;background:var(--surface-2);border-radius:8px;padding:3px;gap:2px}
+  .seg button{background:transparent;border:none;color:var(--text-2);padding:6px 10px;border-radius:6px;font-size:12px;font-weight:500}
+  .seg button.active{background:var(--surface);color:var(--text);box-shadow:var(--shadow-1)}
+
+  /* ---------- Dialogs ---------- */
+  .backdrop{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:100;display:none;align-items:flex-end;justify-content:center;padding:10px}
+  .backdrop.open{display:flex}
+  .sheet{background:var(--surface);border-radius:16px 16px 10px 10px;width:100%;max-width:480px;max-height:92vh;overflow-y:auto;box-shadow:0 -4px 24px rgba(0,0,0,.3);padding-bottom:env(safe-area-inset-bottom)}
+  .sheet-head{padding:14px 16px 10px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border-2);position:sticky;top:0;background:var(--surface);z-index:2}
+  .sheet-head h3{margin:0;font-size:16px;font-weight:500}
+  .sheet-head .close{background:transparent;border:none;color:var(--text-3);padding:4px;display:flex;align-items:center;justify-content:center;border-radius:50%}
+  .sheet-body{padding:16px}
+  .sheet-foot{padding:10px 16px 16px;display:flex;gap:8px;justify-content:flex-end;border-top:1px solid var(--border-2);background:var(--surface);position:sticky;bottom:0}
+  .sheet-foot .btn{flex:1}
+
+  .field{margin-bottom:14px}
+  .field label{display:block;font-size:12px;color:var(--text-3);margin-bottom:6px;font-weight:500;letter-spacing:.3px;text-transform:uppercase}
+  .field input,.field select,.field textarea{width:100%;padding:11px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);color:var(--text);font-size:15px}
+  .field input:focus,.field select:focus,.field textarea:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 3px rgba(21,101,192,.15)}
+  .field-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .field-row.three{grid-template-columns:1fr 1fr 1fr}
+  .checkrow{display:flex;align-items:center;gap:8px;margin-top:4px}
+  .checkrow input[type=checkbox]{width:16px;height:16px;accent-color:var(--primary)}
+
+  .sync-step{padding:14px 16px;border-radius:var(--radius);margin-bottom:10px;border:1px solid var(--border);background:var(--surface-2)}
+  .sync-step.active{border-color:var(--primary);background:var(--primary-50);color:var(--text)}
+  .sync-step.done{border-color:var(--ok);background:var(--ok-bg);color:var(--text)}
+  .sync-step .n{display:inline-flex;width:24px;height:24px;border-radius:50%;background:var(--border);color:var(--text-2);align-items:center;justify-content:center;font-weight:600;font-size:12px;margin-right:8px}
+  .sync-step.active .n{background:var(--primary);color:#fff}
+  .sync-step.done .n{background:var(--ok);color:#fff}
+
+  .toast{position:fixed;bottom:90px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--text);color:var(--bg);padding:10px 18px;border-radius:20px;font-size:13px;z-index:200;opacity:0;transition:all .3s;box-shadow:0 4px 16px rgba(0,0,0,.3);pointer-events:none}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+  .fab{position:fixed;bottom:88px;right:18px;width:56px;height:56px;border-radius:18px;background:var(--primary);color:#fff;border:none;display:flex;align-items:center;justify-content:center;box-shadow:0 6px 16px rgba(21,101,192,.4);z-index:35}
+  .fab svg{width:26px;height:26px}
+
+  .pdf-preview{padding:16px;background:var(--surface-2);border-radius:var(--radius);font-size:12px;color:var(--text-2);line-height:1.6}
+  .pdf-preview h5{margin:0 0 4px 0;font-size:13px;color:var(--text)}
+
+  @media (min-width:600px){
+    .view{max-width:560px;margin:0 auto}
+  }
+</style>
+</head>
+<body data-theme="light">
+
+<header class="app-bar">
+  <div class="app-bar-row">
+    <h1>
+      <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" width="22" height="22"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+      <span id="app-title">Blutdruck</span>
+    </h1>
+    <div class="ic">
+      <button class="icbtn" id="btn-add-top" title="Messung hinzufügen">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" width="22" height="22"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      </button>
+      <button class="icbtn" id="btn-sync-top" title="Bluetooth-Sync">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" width="22" height="22"><path d="M6.5 6.5l11 11L12 23V1l5.5 5.5-11 11"/></svg>
+      </button>
+    </div>
+  </div>
+  <div class="status" id="conn-status"><span class="dot off"></span><span id="conn-text">Nicht verbunden</span></div>
+</header>
+
+<!-- =================== ÜBERSICHT =================== -->
+<main id="view-overview" class="view active">
+
+  <div id="ov-alerts"></div>
+
+  <div class="card hero-card" id="hero-card">
+    <div class="hero-top">
+      <div class="l"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> <span id="hero-when">Letzte Messung</span></div>
+      <div id="hero-chip"></div>
+    </div>
+    <div class="hero-v"><span class="sys" id="hero-sys">—</span><span class="sep">/</span><span class="dia" id="hero-dia">—</span></div>
+    <div class="hero-sub" id="hero-sub">mmHg · Puls <strong>—</strong></div>
+  </div>
+
+  <div class="grid-2">
+    <div class="stat-tile info">
+      <div class="l">Ø 7 Tage</div>
+      <div class="v" id="ov-avg-7">—</div>
+      <div class="d" id="ov-avg-7-d">—</div>
+    </div>
+    <div class="stat-tile info">
+      <div class="l">Ø 30 Tage</div>
+      <div class="v" id="ov-avg-30">—</div>
+      <div class="d" id="ov-avg-30-d">—</div>
+    </div>
+    <div class="stat-tile ok">
+      <div class="l"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--danger)" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg> Puls Ø</div>
+      <div class="v" id="ov-pulse">—<small>bpm</small></div>
+      <div class="d" id="ov-pulse-d">—</div>
+    </div>
+    <div class="stat-tile info">
+      <div class="l">Gesamt</div>
+      <div class="v" id="ov-total">—</div>
+      <div class="d" id="ov-total-d">Messungen</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="card-head"><h4>Verlauf · 14 Tage</h4><button class="link" onclick="setView('stats')">Details</button></div>
+    <div class="chart-wrap"><canvas id="ov-chart"></canvas></div>
+  </div>
+
+  <div class="section">
+    <div class="card-head"><h4>Letzte Messungen</h4><button class="link" onclick="setView('history')">Alle</button></div>
+    <div class="list" id="ov-list"></div>
+  </div>
+</main>
+
+<!-- =================== VERLAUF =================== -->
+<main id="view-history" class="view">
+  <div class="range-tabs" id="hist-tabs">
+    <button class="range-tab active" data-range="7">7 Tage</button>
+    <button class="range-tab" data-range="14">14 Tage</button>
+    <button class="range-tab" data-range="30">30 Tage</button>
+    <button class="range-tab" data-range="90">90 Tage</button>
+    <button class="range-tab" data-range="365">1 Jahr</button>
+    <button class="range-tab" data-range="all">Alle</button>
+  </div>
+  <div class="section">
+    <div class="card-head">
+      <h4 id="hist-title">Alle Messungen</h4>
+      <div class="seg" id="hist-sort">
+        <button data-sort="desc" class="active">Neu</button>
+        <button data-sort="asc">Alt</button>
+      </div>
+    </div>
+    <div class="chart-wrap sm"><canvas id="hist-chart"></canvas></div>
+    <div class="list" id="hist-list"></div>
+  </div>
+</main>
+
+<!-- =================== STATISTIK =================== -->
+<main id="view-stats" class="view">
+  <div class="range-tabs" id="stat-tabs">
+    <button class="range-tab" data-range="7">7 T</button>
+    <button class="range-tab active" data-range="30">30 T</button>
+    <button class="range-tab" data-range="90">90 T</button>
+    <button class="range-tab" data-range="365">1 J</button>
+    <button class="range-tab" data-range="all">Alle</button>
+  </div>
+
+  <div id="stat-alerts"></div>
+
+  <div class="grid-2" id="stat-avgs">
+    <div class="stat-tile info"><div class="l">Ø Systolisch</div><div class="v" id="s-sys">—</div><div class="d" id="s-sys-d">—</div></div>
+    <div class="stat-tile info"><div class="l">Ø Diastolisch</div><div class="v" id="s-dia">—</div><div class="d" id="s-dia-d">—</div></div>
+    <div class="stat-tile ok"><div class="l">Ø Puls</div><div class="v" id="s-pul">—</div><div class="d" id="s-pul-d">—</div></div>
+    <div class="stat-tile info"><div class="l">Messungen</div><div class="v" id="s-cnt">—</div><div class="d" id="s-cnt-d">—</div></div>
+  </div>
+
+  <div class="grid-3">
+    <div class="stat-tile warn"><div class="l">Max Sys</div><div class="v" id="s-max-sys">—</div><div class="d" id="s-max-sys-d">—</div></div>
+    <div class="stat-tile warn"><div class="l">Max Dia</div><div class="v" id="s-max-dia">—</div><div class="d" id="s-max-dia-d">—</div></div>
+    <div class="stat-tile ok"><div class="l">Max Puls</div><div class="v" id="s-max-pul">—</div><div class="d" id="s-max-pul-d">—</div></div>
+    <div class="stat-tile info"><div class="l">Min Sys</div><div class="v" id="s-min-sys">—</div><div class="d" id="s-min-sys-d">—</div></div>
+    <div class="stat-tile info"><div class="l">Min Dia</div><div class="v" id="s-min-dia">—</div><div class="d" id="s-min-dia-d">—</div></div>
+    <div class="stat-tile info"><div class="l">Min Puls</div><div class="v" id="s-min-pul">—</div><div class="d" id="s-min-pul-d">—</div></div>
+  </div>
+
+  <div class="section">
+    <div class="card-head"><h4>Klassifikation nach ESH/WHO</h4></div>
+    <div class="section-body">
+      <div class="class-bar" id="class-bar"></div>
+      <div class="class-legend" id="class-legend"></div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="card-head"><h4>Verlauf &amp; Trend</h4></div>
+    <div class="chart-wrap lg"><canvas id="stat-chart-trend"></canvas></div>
+  </div>
+
+  <div class="section">
+    <div class="card-head"><h4>Morgens vs. Abends</h4></div>
+    <div class="section-body">
+      <div class="grid-2">
+        <div class="stat-tile info"><div class="l">Ø Morgens (&lt;12:00)</div><div class="v" id="s-morn">—</div><div class="d" id="s-morn-d">—</div></div>
+        <div class="stat-tile info"><div class="l">Ø Abends (≥12:00)</div><div class="v" id="s-eve">—</div><div class="d" id="s-eve-d">—</div></div>
+      </div>
+    </div>
+    <div class="chart-wrap sm"><canvas id="stat-chart-me"></canvas></div>
+  </div>
+
+  <div class="section">
+    <div class="card-head"><h4>Wochentags-Übersicht</h4></div>
+    <div class="chart-wrap"><canvas id="stat-chart-wd"></canvas></div>
+  </div>
+
+  <div class="section">
+    <div class="card-head"><h4>Puls-Verlauf</h4></div>
+    <div class="chart-wrap sm"><canvas id="stat-chart-pulse"></canvas></div>
+  </div>
+
+  <div class="section">
+    <div class="card-head"><h4>Weitere Kennzahlen</h4></div>
+    <div class="section-body">
+      <div class="grid-2">
+        <div class="stat-tile info"><div class="l">Std.abw. Sys</div><div class="v" id="s-std-sys">—</div><div class="d">Streuung (σ)</div></div>
+        <div class="stat-tile info"><div class="l">Std.abw. Dia</div><div class="v" id="s-std-dia">—</div><div class="d">Streuung (σ)</div></div>
+        <div class="stat-tile info"><div class="l">Mittl. arter. Druck</div><div class="v" id="s-map">—</div><div class="d">MAP ≈ Dia + (Sys-Dia)/3</div></div>
+        <div class="stat-tile info"><div class="l">Puls-Druck</div><div class="v" id="s-pp">—</div><div class="d">Sys − Dia</div></div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<!-- =================== DATEN =================== -->
+<main id="view-data" class="view">
+  <div class="section">
+    <div class="card-head"><h4>OMRON M7 verbinden</h4></div>
+    <div class="section-body">
+      <p style="margin:0 0 12px;font-size:13px;color:var(--text-2);line-height:1.5">Liest alle auf dem Gerät gespeicherten Messwerte aus und ergänzt die Datenbank. Dubletten werden automatisch erkannt.</p>
+      <button class="btn primary" style="width:100%" onclick="openSync()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6.5 6.5l11 11L12 23V1l5.5 5.5-11 11"/></svg>
+        Jetzt synchronisieren
+      </button>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="card-head"><h4>Manuelle Eingabe</h4></div>
+    <div class="section-body">
+      <p style="margin:0 0 12px;font-size:13px;color:var(--text-2);line-height:1.5">Messung ohne Gerät eintragen.</p>
+      <button class="btn ghost" style="width:100%" onclick="openAdd()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Messung hinzufügen
+      </button>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="card-head"><h4>PDF-Bericht für den Arzt</h4></div>
+    <div class="section-body">
+      <p style="margin:0 0 10px;font-size:13px;color:var(--text-2);line-height:1.5">Erste Seite: Statistiken mit Grafiken. Danach: vollständige, sortierte Tabelle aller Messwerte.</p>
+      <div class="field">
+        <label>Zeitraum</label>
+        <select id="pdf-range">
+          <option value="30">Letzte 30 Tage</option>
+          <option value="90">Letzte 90 Tage</option>
+          <option value="180">Letzte 180 Tage</option>
+          <option value="365">Letztes Jahr</option>
+          <option value="all">Alle Daten</option>
+        </select>
+      </div>
+      <button class="btn danger" style="width:100%" onclick="generatePDF()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+        PDF-Bericht erstellen
+      </button>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="card-head"><h4>Datenbank sichern &amp; wiederherstellen</h4></div>
+    <div class="section-body">
+      <div class="btn-row">
+        <button class="btn outline" onclick="exportJSON()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Export
+        </button>
+        <button class="btn outline" onclick="document.getElementById('file-import').click()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          Import
+        </button>
+        <button class="btn outline full" onclick="exportCSV()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="3" x2="9" y2="21"/></svg>
+          CSV-Export (Tabelle)
+        </button>
+      </div>
+      <input type="file" id="file-import" accept=".json,application/json" style="display:none" onchange="importJSON(event)">
+      <p style="margin:14px 0 0;font-size:11px;color:var(--text-3);line-height:1.5">Export speichert alle Messungen + Einstellungen als JSON. Import fügt zu vorhandenen Daten hinzu (keine Dubletten).</p>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="card-head"><h4 style="color:var(--danger)">Gefahrenzone</h4></div>
+    <div class="section-body">
+      <button class="btn outline" style="width:100%;color:var(--danger);border-color:var(--danger)" onclick="confirmDeleteAll()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-2 14a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L5 6M10 11v6M14 11v6M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+        Alle Daten löschen
+      </button>
+    </div>
+  </div>
+</main>
+
+<!-- =================== EINSTELLUNGEN =================== -->
+<main id="view-settings" class="view">
+  <div class="section">
+    <div class="card-head"><h4>Darstellung</h4></div>
+    <div class="setting">
+      <div class="txt"><div class="t">Dunkles Design</div><div class="s">Hell/Dunkel umschalten</div></div>
+      <div class="toggle" id="toggle-theme" onclick="toggleTheme()"></div>
+    </div>
+    <div class="setting">
+      <div class="txt"><div class="t">Grenzwerte hervorheben</div><div class="s">Auffällige Werte farbig markieren</div></div>
+      <div class="toggle on" id="toggle-highlight" onclick="toggleSetting('highlight', this)"></div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="card-head"><h4>Benutzer (für PDF-Bericht)</h4></div>
+    <div class="section-body">
+      <div class="field">
+        <label>Name</label>
+        <input type="text" id="set-name" placeholder="Max Mustermann" oninput="saveUserField('name', this.value)">
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Geburtstag</label><input type="date" id="set-dob" oninput="saveUserField('dob', this.value)"></div>
+        <div class="field"><label>Arzt</label><input type="text" id="set-doctor" placeholder="Dr. ..." oninput="saveUserField('doctor', this.value)"></div>
+      </div>
+      <div class="field"><label>Medikation</label><textarea id="set-meds" rows="2" placeholder="z.B. Ramipril 5mg, 1-0-0" oninput="saveUserField('meds', this.value)"></textarea></div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="card-head"><h4>Grenzwerte (ESH/WHO)</h4></div>
+    <div class="section-body">
+      <p style="margin:0 0 12px;font-size:12px;color:var(--text-3);line-height:1.5">Referenzwerte zur Klassifikation. Nur ändern, wenn von Arzt individuell vorgegeben.</p>
+      <div class="field-row">
+        <div class="field"><label>Sys Normal &lt;</label><input type="number" id="th-sys-normal" value="130" oninput="saveThreshold('sysNormal',this.value)"></div>
+        <div class="field"><label>Sys Hoch ≥</label><input type="number" id="th-sys-high" value="140" oninput="saveThreshold('sysHigh',this.value)"></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Dia Normal &lt;</label><input type="number" id="th-dia-normal" value="85" oninput="saveThreshold('diaNormal',this.value)"></div>
+        <div class="field"><label>Dia Hoch ≥</label><input type="number" id="th-dia-high" value="90" oninput="saveThreshold('diaHigh',this.value)"></div>
+      </div>
+      <button class="btn outline" style="width:100%" onclick="resetThresholds()">Auf ESH-Standard zurücksetzen</button>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="card-head"><h4>Über</h4></div>
+    <div class="section-body" style="font-size:13px;color:var(--text-2);line-height:1.6">
+      <p style="margin:0 0 8px">Blutdruck-App für OMRON M7 Intelli IT.<br>Läuft lokal &mdash; alle Daten bleiben auf diesem Gerät.</p>
+      <p style="margin:0;color:var(--text-3);font-size:12px">Version 1.0 · <span id="storage-info">—</span></p>
+    </div>
+  </div>
+</main>
+
+<!-- =================== BOTTOM NAV =================== -->
+<nav class="bottom-nav">
+  <button class="nav-btn active" data-view="overview" onclick="setView('overview')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+    Übersicht
+  </button>
+  <button class="nav-btn" data-view="history" onclick="setView('history')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 6-6"/></svg>
+    Verlauf
+  </button>
+  <button class="nav-btn" data-view="stats" onclick="setView('stats')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 20V10M12 20V4M6 20v-6"/></svg>
+    Statistik
+  </button>
+  <button class="nav-btn" data-view="data" onclick="setView('data')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14a9 3 0 0 0 18 0V5"/><path d="M3 12a9 3 0 0 0 18 0"/></svg>
+    Daten
+  </button>
+  <button class="nav-btn" data-view="settings" onclick="setView('settings')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.82-.33 1.7 1.7 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.7 1.7 0 0 0-1-1.51 1.7 1.7 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .33-1.82 1.7 1.7 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.82.33H9a1.7 1.7 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.7 1.7 0 0 0 1 1.51 1.7 1.7 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.33 1.82V9a1.7 1.7 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.7 1.7 0 0 0-1.51 1z"/></svg>
+    Einstellungen
+  </button>
+</nav>
+
+<!-- =================== DIALOG: ADD READING =================== -->
+<div class="backdrop" id="dlg-add">
+  <div class="sheet">
+    <div class="sheet-head">
+      <h3>Messung hinzufügen</h3>
+      <button class="close" onclick="closeDialog('dlg-add')">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="sheet-body">
+      <div class="field-row three">
+        <div class="field"><label>Sys</label><input type="number" id="in-sys" placeholder="127" inputmode="numeric"></div>
+        <div class="field"><label>Dia</label><input type="number" id="in-dia" placeholder="82" inputmode="numeric"></div>
+        <div class="field"><label>Puls</label><input type="number" id="in-pul" placeholder="68" inputmode="numeric"></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Datum</label><input type="date" id="in-date"></div>
+        <div class="field"><label>Zeit</label><input type="time" id="in-time"></div>
+      </div>
+      <div class="field">
+        <label>Arm</label>
+        <select id="in-arm"><option value="links">Links</option><option value="rechts">Rechts</option></select>
+      </div>
+      <div class="field"><label>Notiz (optional)</label><input type="text" id="in-note" placeholder="z.B. nach Sport"></div>
+      <div class="checkrow"><input type="checkbox" id="in-irr"><label for="in-irr" style="margin:0;font-size:13px;color:var(--text-2);text-transform:none;letter-spacing:0">Unregelmäßiger Herzschlag erkannt</label></div>
+    </div>
+    <div class="sheet-foot">
+      <button class="btn outline" onclick="closeDialog('dlg-add')">Abbrechen</button>
+      <button class="btn primary" onclick="saveReading()">Speichern</button>
+    </div>
+  </div>
+</div>
+
+<!-- =================== DIALOG: SYNC =================== -->
+<div class="backdrop" id="dlg-sync">
+  <div class="sheet">
+    <div class="sheet-head">
+      <h3>OMRON M7 synchronisieren</h3>
+      <button class="close" onclick="closeDialog('dlg-sync')">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="sheet-body">
+      <div id="sync-steps">
+        <div class="sync-step active" id="step-1"><span class="n">1</span>Am OMRON M7 die Bluetooth-Taste gedrückt halten, bis <b>"bt"</b> blinkt.</div>
+        <div class="sync-step" id="step-2"><span class="n">2</span>Unten auf <b>"Gerät suchen"</b> tippen und in der Browser-Auswahl den OMRON wählen.</div>
+        <div class="sync-step" id="step-3"><span class="n">3</span>Auf Datenübertragung warten &mdash; die App übernimmt alle gespeicherten Messwerte.</div>
+      </div>
+      <div id="sync-log" style="margin-top:12px;font-size:12px;color:var(--text-3);font-family:'SF Mono',monospace;background:var(--surface-2);padding:10px;border-radius:6px;max-height:140px;overflow-y:auto;display:none"></div>
+    </div>
+    <div class="sheet-foot">
+      <button class="btn outline" onclick="closeDialog('dlg-sync')">Schließen</button>
+      <button class="btn primary" onclick="startBluetoothSync()" id="btn-sync-start">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6.5 6.5l11 11L12 23V1l5.5 5.5-11 11"/></svg>
+        Gerät suchen
+      </button>
+    </div>
+  </div>
+</div>
+
+<button class="fab" id="fab-add" onclick="openAdd()" title="Messung hinzufügen">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+</button>
+
+<div class="toast" id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.7.0/jspdf.plugin.autotable.min.js"></script>
+
+<script>
+/* ============================================================
+ *  DATEN-MODELL
+ * ============================================================ */
+const STORE_KEY = 'bp_omron_v1';
+const state = {
+  readings: [],
+  settings: {
+    theme: 'light',
+    highlight: true,
+    user: { name:'', dob:'', doctor:'', meds:'' },
+    thresholds: { sysNormal:130, sysHigh:140, diaNormal:85, diaHigh:90 }
+  },
+  ui: { view:'overview', histRange:'7', histSort:'desc', statRange:'30' },
+  charts: {}
+};
+
+function load(){
+  try{
+    const raw = localStorage.getItem(STORE_KEY);
+    if(raw){ Object.assign(state, JSON.parse(raw)); }
+    else { state.readings = generateSampleData(); save(); }
+  }catch(e){ console.error(e); state.readings = generateSampleData(); }
+}
+function save(){
+  try{ localStorage.setItem(STORE_KEY, JSON.stringify(state)); }catch(e){ console.error(e); }
+}
+function generateSampleData(){
+  const out = []; const now = Date.now(); const day = 86400000;
+  for(let d=60; d>=0; d--){
+    const base = now - d*day;
+    const mornH = 7 + Math.floor(Math.random()*3);
+    const eveH = 20 + Math.floor(Math.random()*2);
+    const sysBase = 124 + Math.sin(d/10)*4 + (Math.random()-.5)*8;
+    const diaBase = 80 + Math.sin(d/10)*2 + (Math.random()-.5)*5;
+    const pulBase = 68 + (Math.random()-.5)*10;
+    const mkt = h => { const t = new Date(base); t.setHours(h, Math.floor(Math.random()*60), 0, 0); return t.getTime(); };
+    out.push({ id:uid(), ts:mkt(mornH), sys:Math.round(sysBase+4), dia:Math.round(diaBase+2), pul:Math.round(pulBase), arm:'links', note:'', irr:false });
+    out.push({ id:uid(), ts:mkt(eveH), sys:Math.round(sysBase-2), dia:Math.round(diaBase-1), pul:Math.round(pulBase-3), arm:'links', note:'', irr:false });
+    if(d===28 || d===12 || d===4){
+      const t=new Date(base); t.setHours(21,15,0,0);
+      out.push({ id:uid(), ts:t.getTime(), sys:142+Math.floor(Math.random()*12), dia:91+Math.floor(Math.random()*6), pul:78, arm:'links', note:'', irr:false });
+    }
+  }
+  return out.sort((a,b)=>a.ts-b.ts);
+}
+function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,8); }
+
+/* ============================================================
+ *  KLASSIFIKATION
+ * ============================================================ */
+const CLASSES = [
+  { key:'opt', label:'Optimal',         sysMax:120, diaMax:80,  color:'#2e7d32' },
+  { key:'nor', label:'Normal',          sysMax:130, diaMax:85,  color:'#66bb6a' },
+  { key:'hn',  label:'Hoch-Normal',     sysMax:140, diaMax:90,  color:'#fbc02d' },
+  { key:'h1',  label:'Hypertonie Gr.1', sysMax:160, diaMax:100, color:'#fb8c00' },
+  { key:'h2',  label:'Hypertonie Gr.2', sysMax:180, diaMax:110, color:'#e53935' },
+  { key:'h3',  label:'Hypertonie Gr.3', sysMax:999, diaMax:999, color:'#b71c1c' }
+];
+function classify(sys, dia){
+  for(const c of CLASSES){
+    if(sys < c.sysMax && dia < c.diaMax) return c;
+  }
+  return CLASSES[CLASSES.length-1];
+}
+function statusChip(sys, dia){
+  const c = classify(sys, dia);
+  let cls = 'normal';
+  if(c.key==='hn') cls = 'elev';
+  else if(c.key==='h1' || c.key==='h2' || c.key==='h3') cls = 'high';
+  else if(c.key==='opt' || c.key==='nor') cls = 'normal';
+  return `<span class="chip ${cls}"><span class="dt"></span>${c.label}</span>`;
+}
+function severity(sys, dia){
+  const c = classify(sys, dia);
+  if(['h1','h2','h3'].includes(c.key)) return 'high';
+  if(c.key==='hn') return 'elev';
+  return 'ok';
+}
+
+/* ============================================================
+ *  VIEW-SWITCHING
+ * ============================================================ */
+function setView(name){
+  state.ui.view = name;
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+  document.getElementById('view-'+name).classList.add('active');
+  document.querySelectorAll('.nav-btn').forEach(b=>b.classList.toggle('active', b.dataset.view===name));
+  document.getElementById('fab-add').style.display = (name==='overview'||name==='history'||name==='data') ? 'flex':'none';
+  window.scrollTo(0,0);
+  if(name==='overview') renderOverview();
+  else if(name==='history') renderHistory();
+  else if(name==='stats') renderStats();
+  else if(name==='data') updateStorageInfo();
+  else if(name==='settings') renderSettings();
+}
+
+/* ============================================================
+ *  FORMATIERUNG
+ * ============================================================ */
+const fmt = {
+  date: ts => new Date(ts).toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric'}),
+  time: ts => new Date(ts).toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'}),
+  rel: ts => {
+    const diff = (Date.now()-ts)/86400000;
+    if(diff<1) return 'Heute · '+fmt.time(ts);
+    if(diff<2) return 'Gestern · '+fmt.time(ts);
+    if(diff<7) return new Date(ts).toLocaleDateString('de-DE',{weekday:'long'})+' · '+fmt.time(ts);
+    return fmt.date(ts)+' · '+fmt.time(ts);
+  },
+  shortDate: ts => new Date(ts).toLocaleDateString('de-DE',{day:'2-digit',month:'short'})
+};
+
+/* ============================================================
+ *  STATISTIK-BERECHNUNG
+ * ============================================================ */
+function getRange(days){
+  if(days==='all') return state.readings.slice();
+  const cutoff = Date.now() - (parseInt(days)*86400000);
+  return state.readings.filter(r=>r.ts>=cutoff);
+}
+function avg(arr){ if(!arr.length) return 0; return arr.reduce((a,b)=>a+b,0)/arr.length; }
+function stddev(arr){ if(arr.length<2) return 0; const m=avg(arr); return Math.sqrt(arr.reduce((a,b)=>a+(b-m)**2,0)/arr.length); }
+function computeStats(readings){
+  const s = { count:readings.length };
+  if(!readings.length) return s;
+  const sys = readings.map(r=>r.sys), dia = readings.map(r=>r.dia), pul = readings.map(r=>r.pul);
+  s.avgSys = avg(sys); s.avgDia = avg(dia); s.avgPul = avg(pul);
+  s.maxSys = Math.max(...sys); s.maxDia = Math.max(...dia); s.maxPul = Math.max(...pul);
+  s.minSys = Math.min(...sys); s.minDia = Math.min(...dia); s.minPul = Math.min(...pul);
+  s.stdSys = stddev(sys); s.stdDia = stddev(dia);
+  s.map = s.avgDia + (s.avgSys - s.avgDia)/3;
+  s.pp  = s.avgSys - s.avgDia;
+  const cdist = { opt:0,nor:0,hn:0,h1:0,h2:0,h3:0 };
+  readings.forEach(r=>cdist[classify(r.sys,r.dia).key]++);
+  s.classDist = cdist;
+  const morn = readings.filter(r=>new Date(r.ts).getHours()<12);
+  const eve  = readings.filter(r=>new Date(r.ts).getHours()>=12);
+  s.morn = morn.length ? { sys:avg(morn.map(x=>x.sys)), dia:avg(morn.map(x=>x.dia)), pul:avg(morn.map(x=>x.pul)), n:morn.length } : null;
+  s.eve  = eve.length  ? { sys:avg(eve.map(x=>x.sys)),  dia:avg(eve.map(x=>x.dia)),  pul:avg(eve.map(x=>x.pul)),  n:eve.length  } : null;
+  const wd = [[],[],[],[],[],[],[]];
+  readings.forEach(r=>{ const d=new Date(r.ts).getDay(); wd[d].push(r); });
+  s.weekdays = wd.map(arr=>arr.length?{sys:avg(arr.map(x=>x.sys)), dia:avg(arr.map(x=>x.dia)), n:arr.length}:{sys:0,dia:0,n:0});
+  if(readings.length>=3){
+    const xs = readings.map((r,i)=>i), ys = sys;
+    const xm = avg(xs), ym = avg(ys);
+    const num = xs.reduce((a,_,i)=>a+(xs[i]-xm)*(ys[i]-ym), 0);
+    const den = xs.reduce((a,_,i)=>a+(xs[i]-xm)**2, 0);
+    s.trendSys = den ? (num/den) * (readings.length-1) : 0;
+  } else s.trendSys = 0;
+  return s;
+}
+
+/* ============================================================
+ *  RENDER: OVERVIEW
+ * ============================================================ */
+function renderOverview(){
+  const r = state.readings;
+  const alerts = document.getElementById('ov-alerts'); alerts.innerHTML='';
+  if(!r.length){
+    document.getElementById('hero-sys').textContent='—';
+    document.getElementById('hero-dia').textContent='—';
+    document.getElementById('hero-sub').innerHTML='Noch keine Messung vorhanden.';
+    document.getElementById('hero-when').textContent='';
+    document.getElementById('hero-chip').innerHTML='';
+    ['ov-avg-7','ov-avg-30','ov-pulse','ov-total'].forEach(id=>document.getElementById(id).textContent='—');
+    document.getElementById('ov-list').innerHTML='<div class="empty">Noch keine Daten. Gerät synchronisieren oder manuell eintragen.</div>';
+    return;
+  }
+  const latest = r[r.length-1];
+  document.getElementById('hero-sys').textContent = latest.sys;
+  document.getElementById('hero-dia').textContent = latest.dia;
+  document.getElementById('hero-sub').innerHTML = `mmHg · Puls <strong>${latest.pul} bpm</strong> · ${latest.arm==='rechts'?'rechter':'linker'} Arm`;
+  document.getElementById('hero-when').textContent = fmt.rel(latest.ts);
+  document.getElementById('hero-chip').innerHTML = statusChip(latest.sys, latest.dia);
+
+  const sev = severity(latest.sys, latest.dia);
+  if(sev==='high'){
+    alerts.innerHTML = `<div class="alert-banner"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg><div><b>Erhöhter Blutdruck</b>Die letzte Messung liegt im hypertonen Bereich. Ruhe, ggf. nachmessen.</div></div>`;
+  } else if(sev==='elev'){
+    alerts.innerHTML = `<div class="alert-banner warn"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg><div><b>Hoch-normaler Bereich</b>Verlauf im Auge behalten.</div></div>`;
+  }
+
+  const s7 = computeStats(getRange('7'));
+  const s30 = computeStats(getRange('30'));
+  const sPrev = computeStats(state.readings.filter(x=>{ const c=Date.now()-14*86400000; return x.ts>=c && x.ts<Date.now()-7*86400000; }));
+  document.getElementById('ov-avg-7').textContent = s7.count ? `${Math.round(s7.avgSys)}/${Math.round(s7.avgDia)}` : '—';
+  document.getElementById('ov-avg-7-d').innerHTML = s7.count && sPrev.count ?
+    (s7.avgSys<sPrev.avgSys ? `<span class="up">▼ ${Math.round(sPrev.avgSys-s7.avgSys)} mmHg</span> · ${s7.count} Werte`
+                             : `<span class="down">▲ ${Math.round(s7.avgSys-sPrev.avgSys)} mmHg</span> · ${s7.count} Werte`)
+    : `${s7.count} Werte`;
+  document.getElementById('ov-avg-30').textContent = s30.count ? `${Math.round(s30.avgSys)}/${Math.round(s30.avgDia)}` : '—';
+  document.getElementById('ov-avg-30-d').textContent = `${s30.count} Werte`;
+  document.getElementById('ov-pulse').innerHTML = `${Math.round(s7.avgPul||0)}<small>bpm</small>`;
+  document.getElementById('ov-pulse-d').textContent = s7.count ? 'Ruhepuls Ø 7 Tage' : '—';
+  document.getElementById('ov-total').textContent = r.length;
+  document.getElementById('ov-total-d').textContent = `Messungen gesamt`;
+
+  renderOverviewChart();
+  renderOverviewList();
+}
+
+function renderOverviewChart(){
+  const data = getRange('14').sort((a,b)=>a.ts-b.ts);
+  const labels = data.map(r=>fmt.shortDate(r.ts));
+  const sys = data.map(r=>r.sys), dia = data.map(r=>r.dia);
+  if(state.charts.ov) state.charts.ov.destroy();
+  const ctx = document.getElementById('ov-chart').getContext('2d');
+  state.charts.ov = new Chart(ctx, chartOptions('line', { labels, datasets:[
+    { label:'Systolisch', data:sys, borderColor:css('--primary'), backgroundColor:'rgba(21,101,192,.1)', fill:true, tension:.35, pointRadius:2 },
+    { label:'Diastolisch', data:dia, borderColor:css('--primary-light'), backgroundColor:'transparent', tension:.35, pointRadius:2 }
+  ]}));
+}
+function renderOverviewList(){
+  const last = state.readings.slice().sort((a,b)=>b.ts-a.ts).slice(0,6);
+  const host = document.getElementById('ov-list');
+  host.innerHTML = last.map(r=>rowHtml(r)).join('') || '<div class="empty">Keine Messungen</div>';
+}
+function rowHtml(r){
+  const c = classify(r.sys, r.dia);
+  const alert = ['h1','h2','h3'].includes(c.key);
+  let cls = 'normal'; if(c.key==='hn') cls='elev'; else if(alert) cls='high';
+  return `<div class="item ${alert && state.settings.highlight?'alert':''}">
+    <div class="dt-col">${fmt.rel(r.ts)}<small>${r.arm==='rechts'?'rechter':'linker'} Arm${r.note?' · '+escape(r.note):''}${r.irr?' · ⚠ unregelmäßig':''}</small></div>
+    <div class="bp-col">${r.sys}/${r.dia}<small>Puls ${r.pul}</small></div>
+    <span class="chip ${cls}"><span class="dt"></span>${c.label}</span>
+  </div>`;
+}
+function escape(s){ return String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+/* ============================================================
+ *  RENDER: HISTORY
+ * ============================================================ */
+function renderHistory(){
+  document.querySelectorAll('#hist-tabs .range-tab').forEach(t=>t.classList.toggle('active', t.dataset.range===state.ui.histRange));
+  document.querySelectorAll('#hist-sort button').forEach(b=>b.classList.toggle('active', b.dataset.sort===state.ui.histSort));
+  const rng = state.ui.histRange;
+  let data = getRange(rng);
+  const sorted = data.slice().sort((a,b)=> state.ui.histSort==='desc' ? b.ts-a.ts : a.ts-b.ts);
+  document.getElementById('hist-title').textContent = `${data.length} Messungen · ${rng==='all'?'alle':rng+' Tage'}`;
+
+  if(state.charts.hist) state.charts.hist.destroy();
+  const chartData = data.slice().sort((a,b)=>a.ts-b.ts);
+  const ctx = document.getElementById('hist-chart').getContext('2d');
+  state.charts.hist = new Chart(ctx, chartOptions('line', {
+    labels: chartData.map(r=>fmt.shortDate(r.ts)),
+    datasets:[
+      { label:'Sys', data:chartData.map(r=>r.sys), borderColor:css('--primary'), backgroundColor:'rgba(21,101,192,.1)', fill:true, tension:.3, pointRadius:1 },
+      { label:'Dia', data:chartData.map(r=>r.dia), borderColor:css('--primary-light'), tension:.3, pointRadius:1 }
+    ]
+  }));
+  document.getElementById('hist-list').innerHTML = sorted.map(rowHtml).join('') || '<div class="empty">Keine Daten in diesem Zeitraum.</div>';
+}
+document.getElementById('hist-tabs').addEventListener('click', e=>{
+  if(e.target.dataset.range){ state.ui.histRange = e.target.dataset.range; save(); renderHistory(); }
+});
+document.getElementById('hist-sort').addEventListener('click', e=>{
+  if(e.target.dataset.sort){ state.ui.histSort = e.target.dataset.sort; save(); renderHistory(); }
+});
+
+/* ============================================================
+ *  RENDER: STATS
+ * ============================================================ */
+function renderStats(){
+  document.querySelectorAll('#stat-tabs .range-tab').forEach(t=>t.classList.toggle('active', t.dataset.range===state.ui.statRange));
+  const rng = state.ui.statRange;
+  const data = getRange(rng).slice().sort((a,b)=>a.ts-b.ts);
+  const s = computeStats(data);
+
+  const alerts = document.getElementById('stat-alerts'); alerts.innerHTML='';
+  if(s.count){
+    if(s.avgSys>=140 || s.avgDia>=90){
+      alerts.innerHTML += `<div class="alert-banner"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg><div><b>Durchschnitt im hypertonen Bereich</b>Arzt konsultieren, diese Daten eignen sich als Grundlage.</div></div>`;
+    } else if(s.avgSys>=130 || s.avgDia>=85){
+      alerts.innerHTML += `<div class="alert-banner warn"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg><div><b>Hoch-normaler Durchschnitt</b>Lebensstil-Faktoren beachten (Salz, Bewegung, Stress).</div></div>`;
+    }
+    const highCount = s.classDist.h1 + s.classDist.h2 + s.classDist.h3;
+    if(highCount>0 && !(s.avgSys>=140 || s.avgDia>=90)){
+      alerts.innerHTML += `<div class="alert-banner info"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg><div><b>${highCount} auffällige Werte</b>im Bereich Hypertonie Grad 1+. Im Verlauf sichtbar.</div></div>`;
+    }
+    if(Math.abs(s.trendSys)>=5){
+      const dir = s.trendSys>0 ? 'steigend' : 'fallend';
+      alerts.innerHTML += `<div class="alert-banner info"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg><div><b>Trend ${dir}</b>Systolisch ${s.trendSys>0?'+':''}${Math.round(s.trendSys)} mmHg über den Zeitraum.</div></div>`;
+    }
+  }
+
+  const set = (id,v)=>document.getElementById(id).textContent = v;
+  if(!s.count){
+    ['s-sys','s-dia','s-pul','s-cnt','s-max-sys','s-max-dia','s-max-pul','s-min-sys','s-min-dia','s-min-pul','s-std-sys','s-std-dia','s-map','s-pp','s-morn','s-eve'].forEach(id=>set(id,'—'));
+    return;
+  }
+  set('s-sys', Math.round(s.avgSys)+' '); set('s-sys-d', `mmHg · Ø · ${s.count} Werte`);
+  set('s-dia', Math.round(s.avgDia)+' '); set('s-dia-d', `mmHg · Ø`);
+  set('s-pul', Math.round(s.avgPul)+' '); set('s-pul-d', `bpm · Ruhepuls`);
+  set('s-cnt', s.count); set('s-cnt-d', rng==='all'?'Gesamt':`in ${rng} Tagen`);
+  set('s-max-sys', s.maxSys); set('s-max-sys-d','mmHg');
+  set('s-max-dia', s.maxDia); set('s-max-dia-d','mmHg');
+  set('s-max-pul', s.maxPul); set('s-max-pul-d','bpm');
+  set('s-min-sys', s.minSys); set('s-min-sys-d','mmHg');
+  set('s-min-dia', s.minDia); set('s-min-dia-d','mmHg');
+  set('s-min-pul', s.minPul); set('s-min-pul-d','bpm');
+  set('s-std-sys', s.stdSys.toFixed(1));
+  set('s-std-dia', s.stdDia.toFixed(1));
+  set('s-map', Math.round(s.map)+' mmHg');
+  set('s-pp',  Math.round(s.pp)+' mmHg');
+  if(s.morn){ set('s-morn', Math.round(s.morn.sys)+'/'+Math.round(s.morn.dia)); set('s-morn-d', `${s.morn.n} Werte · Puls Ø ${Math.round(s.morn.pul)}`); }
+  else { set('s-morn','—'); set('s-morn-d','Keine'); }
+  if(s.eve){ set('s-eve', Math.round(s.eve.sys)+'/'+Math.round(s.eve.dia)); set('s-eve-d', `${s.eve.n} Werte · Puls Ø ${Math.round(s.eve.pul)}`); }
+  else { set('s-eve','—'); set('s-eve-d','Keine'); }
+
+  const total = s.count;
+  const bar = document.getElementById('class-bar'); bar.innerHTML='';
+  const legend = document.getElementById('class-legend'); legend.innerHTML='';
+  CLASSES.forEach(c=>{
+    const n = s.classDist[c.key]; if(!n) return;
+    const pct = (n/total)*100;
+    const seg = document.createElement('span');
+    seg.style.width = pct+'%'; seg.style.background = c.color;
+    seg.title = `${c.label}: ${n} (${pct.toFixed(0)}%)`;
+    bar.appendChild(seg);
+    const li = document.createElement('span');
+    li.innerHTML = `<span class="sw" style="background:${c.color}"></span>${c.label} <b style="margin-left:auto;color:var(--text)">${n}</b> <span style="color:var(--text-3)">(${pct.toFixed(0)}%)</span>`;
+    li.style.justifyContent='space-between'; li.style.gap='6px';
+    legend.appendChild(li);
+  });
+
+  renderStatChartTrend(data);
+  renderStatChartME(s);
+  renderStatChartWD(s);
+  renderStatChartPulse(data);
+}
+document.getElementById('stat-tabs').addEventListener('click', e=>{
+  if(e.target.dataset.range){ state.ui.statRange = e.target.dataset.range; save(); renderStats(); }
+});
+
+function renderStatChartTrend(data){
+  if(state.charts.trend) state.charts.trend.destroy();
+  const labels = data.map(r=>fmt.shortDate(r.ts));
+  const sys = data.map(r=>r.sys), dia = data.map(r=>r.dia);
+  const ctx = document.getElementById('stat-chart-trend').getContext('2d');
+  const sysColor = r => {
+    const cl = classify(r.sys, r.dia);
+    return cl.color;
+  };
+  state.charts.trend = new Chart(ctx, chartOptions('line', {
+    labels, datasets:[
+      { label:'Sys', data:sys, borderColor:css('--primary'), backgroundColor:'rgba(21,101,192,.08)', fill:true, tension:.3, pointRadius:3, pointBackgroundColor:data.map(sysColor) },
+      { label:'Dia', data:dia, borderColor:css('--primary-light'), tension:.3, pointRadius:2 },
+      { label:'Grenze 140', data:new Array(labels.length).fill(140), borderColor:'rgba(229,57,53,.5)', borderDash:[4,4], pointRadius:0, borderWidth:1 },
+      { label:'Grenze 90',  data:new Array(labels.length).fill(90),  borderColor:'rgba(229,57,53,.3)', borderDash:[4,4], pointRadius:0, borderWidth:1 }
+    ]
+  }));
+}
+function renderStatChartME(s){
+  if(state.charts.me) state.charts.me.destroy();
+  const ctx = document.getElementById('stat-chart-me').getContext('2d');
+  state.charts.me = new Chart(ctx, chartOptions('bar', {
+    labels:['Morgens','Abends'],
+    datasets:[
+      { label:'Sys', data:[s.morn?Math.round(s.morn.sys):0, s.eve?Math.round(s.eve.sys):0], backgroundColor:css('--primary') },
+      { label:'Dia', data:[s.morn?Math.round(s.morn.dia):0, s.eve?Math.round(s.eve.dia):0], backgroundColor:css('--primary-light') }
+    ]
+  }));
+}
+function renderStatChartWD(s){
+  if(state.charts.wd) state.charts.wd.destroy();
+  const labels = ['So','Mo','Di','Mi','Do','Fr','Sa'];
+  const ctx = document.getElementById('stat-chart-wd').getContext('2d');
+  state.charts.wd = new Chart(ctx, chartOptions('bar', {
+    labels, datasets:[
+      { label:'Sys Ø', data:s.weekdays.map(w=>Math.round(w.sys||0)), backgroundColor:css('--primary') },
+      { label:'Dia Ø', data:s.weekdays.map(w=>Math.round(w.dia||0)), backgroundColor:css('--primary-light') }
+    ]
+  }));
+}
+function renderStatChartPulse(data){
+  if(state.charts.pulse) state.charts.pulse.destroy();
+  const ctx = document.getElementById('stat-chart-pulse').getContext('2d');
+  state.charts.pulse = new Chart(ctx, chartOptions('line', {
+    labels: data.map(r=>fmt.shortDate(r.ts)),
+    datasets:[ { label:'Puls', data:data.map(r=>r.pul), borderColor:'#c62828', backgroundColor:'rgba(198,40,40,.1)', fill:true, tension:.3, pointRadius:1 } ]
+  }));
+}
+
+/* ============================================================
+ *  CHART HELPERS
+ * ============================================================ */
+function css(v){ return getComputedStyle(document.body).getPropertyValue(v).trim() || '#1565c0'; }
+function chartOptions(type, data){
+  const isDark = state.settings.theme==='dark';
+  const grid = isDark ? 'rgba(255,255,255,.06)' : 'rgba(0,0,0,.06)';
+  const tick = isDark ? '#9e9e9e' : '#757575';
+  return {
+    type, data,
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      interaction:{ mode:'index', intersect:false },
+      plugins:{ legend:{ display:true, labels:{ color:tick, boxWidth:10, padding:10, font:{size:11} } }, tooltip:{ mode:'index' } },
+      scales:{
+        y:{ grid:{ color:grid }, ticks:{ color:tick, font:{size:10} }, beginAtZero:false },
+        x:{ grid:{ color:grid, display:false }, ticks:{ color:tick, font:{size:10}, maxRotation:0, autoSkip:true, maxTicksLimit:7 } }
+      }
+    }
+  };
+}
+
+/* ============================================================
+ *  DIALOG HELPERS
+ * ============================================================ */
+function openDialog(id){ document.getElementById(id).classList.add('open'); }
+function closeDialog(id){ document.getElementById(id).classList.remove('open'); }
+document.querySelectorAll('.backdrop').forEach(b=> b.addEventListener('click', e=>{ if(e.target===b) b.classList.remove('open'); }));
+
+function openAdd(){
+  const now = new Date();
+  document.getElementById('in-date').value = now.toISOString().slice(0,10);
+  document.getElementById('in-time').value = now.toTimeString().slice(0,5);
+  document.getElementById('in-sys').value=''; document.getElementById('in-dia').value=''; document.getElementById('in-pul').value='';
+  document.getElementById('in-note').value=''; document.getElementById('in-irr').checked=false;
+  openDialog('dlg-add');
+  setTimeout(()=>document.getElementById('in-sys').focus(), 200);
+}
+function saveReading(){
+  const sys = parseInt(document.getElementById('in-sys').value);
+  const dia = parseInt(document.getElementById('in-dia').value);
+  const pul = parseInt(document.getElementById('in-pul').value);
+  if(!sys || !dia || !pul){ toast('Bitte Sys, Dia und Puls eingeben'); return; }
+  const d = document.getElementById('in-date').value;
+  const t = document.getElementById('in-time').value;
+  const ts = new Date(d+'T'+t).getTime();
+  state.readings.push({
+    id:uid(), ts, sys, dia, pul,
+    arm: document.getElementById('in-arm').value,
+    note: document.getElementById('in-note').value,
+    irr: document.getElementById('in-irr').checked
+  });
+  state.readings.sort((a,b)=>a.ts-b.ts);
+  save(); toast('Messung gespeichert'); closeDialog('dlg-add');
+  renderOverview();
+}
+
+/* ============================================================
+ *  BLUETOOTH SYNC  (OMRON M7 · Standard BLE Blood Pressure Service 0x1810)
+ * ============================================================ */
+function openSync(){
+  ['step-1','step-2','step-3'].forEach((s,i)=>{
+    const el=document.getElementById(s); el.classList.remove('done'); el.classList.toggle('active', i===0);
+  });
+  document.getElementById('sync-log').style.display='none';
+  document.getElementById('sync-log').textContent='';
+  document.getElementById('btn-sync-start').disabled=false;
+  openDialog('dlg-sync');
+}
+function syncStep(n){
+  for(let i=1;i<=3;i++){
+    const el=document.getElementById('step-'+i);
+    el.classList.remove('active','done');
+    if(i<n) el.classList.add('done');
+    else if(i===n) el.classList.add('active');
+  }
+}
+function log(msg){
+  const l = document.getElementById('sync-log');
+  l.style.display='block';
+  l.textContent += msg+'\n'; l.scrollTop = l.scrollHeight;
+}
+async function startBluetoothSync(){
+  if(!navigator.bluetooth){
+    toast('Browser unterstützt Web-Bluetooth nicht. Chrome/Edge nutzen.');
+    log('FEHLER: navigator.bluetooth nicht verfügbar.');
+    return;
+  }
+  try{
+    syncStep(2);
+    log('Suche nach Blutdruckmessgerät …');
+    const device = await navigator.bluetooth.requestDevice({
+      filters:[{ services:['blood_pressure'] }],
+      optionalServices:['current_time','device_information','battery_service','0000fe4a-0000-1000-8000-00805f9b34fb']
+    });
+    log('Gefunden: '+(device.name||'unbekannt'));
+    document.getElementById('conn-text').textContent='Verbinde …';
+    const server = await device.gatt.connect();
+    log('Verbunden. Lese Blood-Pressure-Service …');
+    setConnected(true, device.name);
+    syncStep(3);
+
+    const service = await server.getPrimaryService('blood_pressure');
+    const ch = await service.getCharacteristic('blood_pressure_measurement');
+
+    let received = 0, added = 0;
+    ch.addEventListener('characteristicvaluechanged', ev=>{
+      const rec = parseBPMeasurement(ev.target.value);
+      received++;
+      if(rec){
+        const exists = state.readings.some(r=>Math.abs(r.ts-rec.ts)<60000 && r.sys===rec.sys && r.dia===rec.dia);
+        if(!exists){ state.readings.push(rec); added++; log(`+ ${fmt.date(rec.ts)} ${fmt.time(rec.ts)}  ${rec.sys}/${rec.dia}  P:${rec.pul}`); }
+      }
+    });
+    await ch.startNotifications();
+    log('Warte auf gespeicherte Messungen …');
+
+    setTimeout(async ()=>{
+      try{ await ch.stopNotifications(); }catch(e){}
+      state.readings.sort((a,b)=>a.ts-b.ts); save();
+      log(`\nFertig. ${received} empfangen, ${added} neu übernommen.`);
+      toast(`${added} neue Messwerte übernommen`);
+      renderOverview();
+    }, 8000);
+  }catch(err){
+    log('FEHLER: '+err.message);
+    toast('Verbindung abgebrochen: '+err.message);
+    setConnected(false);
+  }
+}
+function parseBPMeasurement(dv){
+  try{
+    const flags = dv.getUint8(0);
+    const kPa = flags & 0x01;
+    const hasTime = flags & 0x02;
+    const hasPulse = flags & 0x04;
+    const hasIRR = flags & 0x20;
+    let o = 1;
+    const readF = () => { const raw = dv.getUint16(o, true); o+=2; const mantissa = (raw & 0x0FFF) << 20 >> 20; const exp = raw >> 12; return mantissa * Math.pow(10, exp>7?exp-16:exp); };
+    let sys = readF(), dia = readF(), map = readF();
+    if(kPa){ sys*=7.50062; dia*=7.50062; }
+    let ts = Date.now();
+    if(hasTime){
+      const y = dv.getUint16(o,true); o+=2;
+      const mo = dv.getUint8(o++); const d = dv.getUint8(o++);
+      const hh = dv.getUint8(o++); const mm = dv.getUint8(o++); const ss = dv.getUint8(o++);
+      ts = new Date(y, mo-1, d, hh, mm, ss).getTime();
+    }
+    let pul = 0;
+    if(hasPulse){ pul = Math.round(readF()); }
+    return { id:uid(), ts, sys:Math.round(sys), dia:Math.round(dia), pul, arm:'links', note:'', irr:!!hasIRR };
+  }catch(e){ log('Parse-Fehler: '+e.message); return null; }
+}
+function setConnected(on, name){
+  const dot = document.querySelector('#conn-status .dot');
+  const txt = document.getElementById('conn-text');
+  dot.classList.toggle('off', !on);
+  txt.textContent = on ? ('Verbunden · '+(name||'OMRON')) : 'Nicht verbunden';
+}
+
+/* ============================================================
+ *  IMPORT / EXPORT / PDF
+ * ============================================================ */
+function exportJSON(){
+  const blob = new Blob([JSON.stringify(state, null, 2)], {type:'application/json'});
+  download(blob, 'blutdruck-backup-'+new Date().toISOString().slice(0,10)+'.json');
+  toast('Export gestartet');
+}
+function exportCSV(){
+  const rows = [['Datum','Zeit','Systolisch','Diastolisch','Puls','Arm','Unregelmäßig','Notiz']];
+  const sorted = state.readings.slice().sort((a,b)=>b.ts-a.ts);
+  sorted.forEach(r=>rows.push([fmt.date(r.ts), fmt.time(r.ts), r.sys, r.dia, r.pul, r.arm, r.irr?'ja':'', (r.note||'').replace(/[\r\n;]/g,' ')]));
+  const csv = rows.map(row=>row.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(';')).join('\r\n');
+  download(new Blob(['\uFEFF'+csv], {type:'text/csv;charset=utf-8'}), 'blutdruck-export-'+new Date().toISOString().slice(0,10)+'.csv');
+  toast('CSV-Export gestartet');
+}
+function download(blob, name){
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name;
+  document.body.appendChild(a); a.click(); setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 500);
+}
+function importJSON(ev){
+  const file = ev.target.files[0]; if(!file) return;
+  const fr = new FileReader();
+  fr.onload = e => {
+    try{
+      const d = JSON.parse(e.target.result);
+      if(!d.readings || !Array.isArray(d.readings)) throw new Error('Ungültiges Format');
+      let added = 0;
+      d.readings.forEach(r=>{
+        const dup = state.readings.some(x=>Math.abs(x.ts-r.ts)<60000 && x.sys===r.sys && x.dia===r.dia);
+        if(!dup){ state.readings.push(r); added++; }
+      });
+      if(d.settings){ state.settings = Object.assign(state.settings, d.settings); applyTheme(); }
+      state.readings.sort((a,b)=>a.ts-b.ts); save();
+      toast(`${added} Messungen importiert`);
+      renderOverview();
+    }catch(err){ toast('Import fehlgeschlagen: '+err.message); }
+    ev.target.value='';
+  };
+  fr.readAsText(file);
+}
+function confirmDeleteAll(){
+  if(!confirm('Wirklich ALLE Messdaten unwiderruflich löschen?')) return;
+  if(!confirm('Sicher? Diese Aktion kann nicht rückgängig gemacht werden.')) return;
+  state.readings = []; save(); toast('Alle Daten gelöscht'); renderOverview();
+}
+function updateStorageInfo(){
+  const n = state.readings.length;
+  const size = new Blob([JSON.stringify(state)]).size;
+  document.getElementById('storage-info').textContent = `${n} Messungen · ${(size/1024).toFixed(1)} KB gespeichert`;
+}
+
+/* ============================================================
+ *  PDF-EXPORT
+ * ============================================================ */
+async function generatePDF(){
+  const range = document.getElementById('pdf-range').value;
+  let data = getRange(range).slice().sort((a,b)=>b.ts-a.ts);
+  if(!data.length){ toast('Keine Daten im gewählten Zeitraum'); return; }
+  toast('PDF wird erstellt …');
+
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit:'mm', format:'a4' });
+  const pageW = doc.internal.pageSize.getWidth();
+  const pageH = doc.internal.pageSize.getHeight();
+  const s = computeStats(data.slice().sort((a,b)=>a.ts-b.ts));
+  const user = state.settings.user;
+  const dateFrom = fmt.date(data[data.length-1].ts);
+  const dateTo = fmt.date(data[0].ts);
+
+  /* --------- PAGE 1: Titel + Zusammenfassung --------- */
+  doc.setFillColor(21,101,192); doc.rect(0,0,pageW,28,'F');
+  doc.setTextColor(255,255,255); doc.setFont('helvetica','bold'); doc.setFontSize(18);
+  doc.text('Blutdruck-Bericht', 14, 18);
+  doc.setFontSize(10); doc.setFont('helvetica','normal');
+  doc.text(`Zeitraum: ${dateFrom} – ${dateTo}`, pageW-14, 18, { align:'right' });
+
+  doc.setTextColor(33,33,33); let y = 38;
+  if(user.name || user.doctor || user.meds){
+    doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.text('Patient', 14, y); y+=5;
+    doc.setFont('helvetica','normal'); doc.setFontSize(10);
+    if(user.name) { doc.text('Name: '+user.name, 14, y); y+=5; }
+    if(user.dob)  { doc.text('Geburtstag: '+user.dob, 14, y); y+=5; }
+    if(user.doctor){ doc.text('Behandelnder Arzt: '+user.doctor, 14, y); y+=5; }
+    if(user.meds) { doc.text('Medikation: '+user.meds, 14, y, { maxWidth:pageW-28 }); y+=8; }
+    y += 2;
+  }
+
+  doc.setFont('helvetica','bold'); doc.setFontSize(13);
+  doc.text('Zusammenfassung', 14, y); y+=6;
+  doc.setDrawColor(224,224,224); doc.line(14,y-2, pageW-14,y-2);
+
+  const boxes = [
+    { l:'Messungen', v:String(s.count), d:`${(s.count/Math.max(1,((data[0].ts-data[data.length-1].ts)/86400000))).toFixed(1)} /Tag` },
+    { l:'Ø Systolisch', v:Math.round(s.avgSys)+' mmHg', d:`σ ${s.stdSys.toFixed(1)}` },
+    { l:'Ø Diastolisch', v:Math.round(s.avgDia)+' mmHg', d:`σ ${s.stdDia.toFixed(1)}` },
+    { l:'Ø Puls', v:Math.round(s.avgPul)+' bpm', d:'' },
+    { l:'Max Sys/Dia', v:s.maxSys+'/'+s.maxDia, d:'mmHg' },
+    { l:'Min Sys/Dia', v:s.minSys+'/'+s.minDia, d:'mmHg' },
+    { l:'Mittl. art. Druck', v:Math.round(s.map)+' mmHg', d:'MAP' },
+    { l:'Puls-Druck', v:Math.round(s.pp)+' mmHg', d:'PP (Sys−Dia)' }
+  ];
+  const bw = (pageW-28-18)/4, bh = 22;
+  boxes.forEach((b,i)=>{
+    const col = i%4, row = Math.floor(i/4);
+    const bx = 14 + col*(bw+6), by = y + row*(bh+4);
+    doc.setDrawColor(224,224,224); doc.setFillColor(250,250,250);
+    doc.roundedRect(bx,by,bw,bh,2,2,'FD');
+    doc.setFontSize(7); doc.setTextColor(117,117,117); doc.setFont('helvetica','normal');
+    doc.text(b.l.toUpperCase(), bx+3, by+4.5);
+    doc.setFontSize(12); doc.setTextColor(21,101,192); doc.setFont('helvetica','bold');
+    doc.text(b.v, bx+3, by+12);
+    doc.setFontSize(7); doc.setTextColor(117,117,117); doc.setFont('helvetica','normal');
+    doc.text(b.d, bx+3, by+18);
+  });
+  y += 2*(bh+4) + 4;
+
+  /* Hinweise */
+  doc.setFont('helvetica','bold'); doc.setFontSize(13); doc.setTextColor(33,33,33);
+  doc.text('Befund (automatisch)', 14, y); y+=6;
+  doc.setDrawColor(224,224,224); doc.line(14,y-2, pageW-14,y-2);
+  doc.setFontSize(9); doc.setFont('helvetica','normal'); doc.setTextColor(66,66,66);
+  const findings = [];
+  if(s.avgSys>=140 || s.avgDia>=90) findings.push({ sev:'high', txt:`Durchschnitt (${Math.round(s.avgSys)}/${Math.round(s.avgDia)}) liegt im hypertonen Bereich (≥140/90).` });
+  else if(s.avgSys>=130 || s.avgDia>=85) findings.push({ sev:'warn', txt:`Durchschnitt (${Math.round(s.avgSys)}/${Math.round(s.avgDia)}) liegt hoch-normal (130-139/85-89).` });
+  else findings.push({ sev:'ok', txt:`Durchschnitt (${Math.round(s.avgSys)}/${Math.round(s.avgDia)}) liegt im optimalen/normalen Bereich.` });
+  const alertN = s.classDist.h1 + s.classDist.h2 + s.classDist.h3;
+  if(alertN>0) findings.push({ sev:'high', txt:`${alertN} Einzelmessungen (${((alertN/s.count)*100).toFixed(0)} %) im Bereich Hypertonie Grad 1+.` });
+  if(s.maxSys>=180 || s.maxDia>=110) findings.push({ sev:'high', txt:`Spitzenwert ${s.maxSys}/${s.maxDia} im Bereich Grad-3-Hypertonie.` });
+  if(Math.abs(s.trendSys)>=5) findings.push({ sev:'warn', txt:`Systolischer Trend ${s.trendSys>0?'steigend':'fallend'} (${s.trendSys>0?'+':''}${Math.round(s.trendSys)} mmHg im Zeitraum).` });
+  if(s.morn && s.eve && (s.morn.sys - s.eve.sys) > 8) findings.push({ sev:'warn', txt:`Morgenwerte liegen ${Math.round(s.morn.sys - s.eve.sys)} mmHg über Abendwerten.` });
+  if(s.pp > 60) findings.push({ sev:'warn', txt:`Erhöhte Pulsdruckamplitude (Ø ${Math.round(s.pp)} mmHg).` });
+  findings.forEach(f=>{
+    if(y>pageH-30){ doc.addPage(); y=20; }
+    const col = f.sev==='high'?[198,40,40] : f.sev==='warn'?[239,108,0] : [46,125,50];
+    doc.setFillColor(...col); doc.circle(16, y-1, 1.3, 'F');
+    doc.setTextColor(66,66,66);
+    doc.text(f.txt, 20, y, { maxWidth:pageW-34 }); y+=6;
+  });
+  y+=4;
+
+  /* --------- PAGE 1/2: Klassifikation --------- */
+  if(y>pageH-70){ doc.addPage(); y=20; }
+  doc.setFont('helvetica','bold'); doc.setFontSize(13); doc.setTextColor(33,33,33);
+  doc.text('Klassifikation (ESH/WHO)', 14, y); y+=6;
+  doc.setDrawColor(224,224,224); doc.line(14,y-2, pageW-14,y-2);
+  const barY = y+3, barH = 10, barW = pageW-28; let x0=14;
+  CLASSES.forEach(c=>{
+    const n = s.classDist[c.key]; if(!n) return;
+    const w = (n/s.count)*barW;
+    const col = hexToRgb(c.color);
+    doc.setFillColor(...col); doc.rect(x0, barY, w, barH, 'F');
+    x0+=w;
+  });
+  y = barY + barH + 6;
+  doc.setFontSize(9); doc.setFont('helvetica','normal');
+  CLASSES.forEach(c=>{
+    const n = s.classDist[c.key]; if(!n) return;
+    if(y>pageH-20){ doc.addPage(); y=20; }
+    const col = hexToRgb(c.color);
+    doc.setFillColor(...col); doc.rect(14, y-3, 3, 3, 'F');
+    doc.setTextColor(66,66,66);
+    doc.text(`${c.label}`, 20, y);
+    doc.text(`${n}`, pageW-40, y, {align:'right'});
+    doc.text(`${((n/s.count)*100).toFixed(0)} %`, pageW-14, y, {align:'right'});
+    y+=5;
+  });
+  y+=4;
+
+  /* --------- PAGE 2: Grafiken --------- */
+  doc.addPage(); y=20;
+  doc.setFont('helvetica','bold'); doc.setFontSize(14); doc.setTextColor(33,33,33);
+  doc.text('Verlaufs-Grafiken', 14, y); y+=6;
+  doc.setDrawColor(224,224,224); doc.line(14,y-2, pageW-14,y-2); y+=2;
+
+  const chartData = data.slice().sort((a,b)=>a.ts-b.ts);
+
+  const imgTrend = await renderChartToImage('line', {
+    labels: chartData.map(r=>fmt.shortDate(r.ts)),
+    datasets:[
+      { label:'Systolisch', data:chartData.map(r=>r.sys), borderColor:'#1565c0', backgroundColor:'rgba(21,101,192,.15)', fill:true, tension:.3, pointRadius:1 },
+      { label:'Diastolisch', data:chartData.map(r=>r.dia), borderColor:'#90caf9', tension:.3, pointRadius:1 },
+      { label:'140', data:new Array(chartData.length).fill(140), borderColor:'rgba(229,57,53,.6)', borderDash:[4,4], pointRadius:0, borderWidth:1 },
+      { label:'90',  data:new Array(chartData.length).fill(90),  borderColor:'rgba(229,57,53,.4)', borderDash:[4,4], pointRadius:0, borderWidth:1 }
+    ]
+  }, 900, 380, 'Systolisch / Diastolisch (mmHg)');
+  doc.setFontSize(10); doc.setFont('helvetica','bold'); doc.text('Blutdruck-Verlauf', 14, y+4); y+=6;
+  doc.addImage(imgTrend, 'PNG', 14, y, pageW-28, 70); y+=76;
+
+  const imgPulse = await renderChartToImage('line', {
+    labels: chartData.map(r=>fmt.shortDate(r.ts)),
+    datasets:[ { label:'Puls', data:chartData.map(r=>r.pul), borderColor:'#c62828', backgroundColor:'rgba(198,40,40,.15)', fill:true, tension:.3, pointRadius:1 } ]
+  }, 900, 320, 'Puls (bpm)');
+  doc.setFont('helvetica','bold'); doc.text('Puls-Verlauf', 14, y+4); y+=6;
+  doc.addImage(imgPulse, 'PNG', 14, y, pageW-28, 55); y+=60;
+
+  if(y>pageH-70){ doc.addPage(); y=20; }
+  const imgME = await renderChartToImage('bar', {
+    labels:['Morgens (< 12:00)','Abends (≥ 12:00)'],
+    datasets:[
+      { label:'Sys Ø', data:[s.morn?Math.round(s.morn.sys):0, s.eve?Math.round(s.eve.sys):0], backgroundColor:'#1565c0' },
+      { label:'Dia Ø', data:[s.morn?Math.round(s.morn.dia):0, s.eve?Math.round(s.eve.dia):0], backgroundColor:'#90caf9' }
+    ]
+  }, 900, 320, 'Tageszeit-Vergleich');
+  doc.setFont('helvetica','bold'); doc.text('Morgens vs. Abends', 14, y+4); y+=6;
+  doc.addImage(imgME, 'PNG', 14, y, pageW-28, 55); y+=60;
+
+  /* --------- DATA TABLE --------- */
+  doc.addPage();
+  doc.setFont('helvetica','bold'); doc.setFontSize(14); doc.setTextColor(33,33,33);
+  doc.text('Alle Messungen', 14, 18);
+  doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(117,117,117);
+  doc.text(`${data.length} Messwerte · sortiert nach Datum (neu → alt)`, 14, 24);
+
+  const head = [['Datum','Zeit','Sys','Dia','Puls','Arm','Klassifikation','Hinweis']];
+  const body = data.map(r=>{
+    const c = classify(r.sys, r.dia);
+    const hint = (r.irr?'⚠ unregelm.':'') + (r.note?(r.irr?' · ':'')+r.note:'');
+    return [fmt.date(r.ts), fmt.time(r.ts), r.sys, r.dia, r.pul, r.arm, c.label, hint];
+  });
+  doc.autoTable({
+    head, body, startY:28,
+    styles:{ fontSize:8, cellPadding:1.5 },
+    headStyles:{ fillColor:[21,101,192], textColor:255, fontStyle:'bold' },
+    alternateRowStyles:{ fillColor:[248,250,252] },
+    columnStyles:{
+      0:{cellWidth:22}, 1:{cellWidth:14,halign:'right'},
+      2:{cellWidth:13,halign:'right',fontStyle:'bold'},
+      3:{cellWidth:13,halign:'right',fontStyle:'bold'},
+      4:{cellWidth:13,halign:'right'}, 5:{cellWidth:14},
+      6:{cellWidth:40}, 7:{cellWidth:'auto'}
+    },
+    didParseCell: hook=>{
+      if(hook.section==='body'){
+        const r = data[hook.row.index]; if(!r) return;
+        const c = classify(r.sys, r.dia);
+        if(c.key==='h1' || c.key==='h2' || c.key==='h3'){
+          if(hook.column.index===2 || hook.column.index===3) hook.cell.styles.textColor = [198,40,40];
+          if(hook.column.index===6) hook.cell.styles.textColor = [198,40,40];
+        } else if(c.key==='hn'){
+          if(hook.column.index===6) hook.cell.styles.textColor = [239,108,0];
+        }
+      }
+    },
+    didDrawPage: d=>{
+      doc.setFontSize(8); doc.setTextColor(150,150,150);
+      doc.text(`Blutdruck-Bericht · ${new Date().toLocaleDateString('de-DE')}`, 14, pageH-8);
+      doc.text(`Seite ${doc.internal.getCurrentPageInfo().pageNumber}`, pageW-14, pageH-8, {align:'right'});
+    }
+  });
+
+  doc.save(`blutdruck-bericht-${new Date().toISOString().slice(0,10)}.pdf`);
+  toast('PDF gespeichert');
+}
+function hexToRgb(hex){
+  const m = hex.replace('#','').match(/.{2}/g);
+  return m ? m.map(h=>parseInt(h,16)) : [128,128,128];
+}
+async function renderChartToImage(type, data, w, h, title){
+  return new Promise(resolve=>{
+    const canvas = document.createElement('canvas');
+    canvas.width = w; canvas.height = h;
+    canvas.style.position='fixed'; canvas.style.left='-9999px';
+    document.body.appendChild(canvas);
+    const ch = new Chart(canvas.getContext('2d'), {
+      type, data,
+      options:{
+        responsive:false, animation:false, devicePixelRatio:2,
+        plugins:{ legend:{ labels:{ color:'#424242', font:{size:13} } }, title: title ? { display:false } : undefined },
+        scales:{
+          y:{ grid:{ color:'rgba(0,0,0,.06)' }, ticks:{ color:'#666', font:{size:11} } },
+          x:{ grid:{ display:false }, ticks:{ color:'#666', font:{size:11}, maxTicksLimit:10 } }
+        }
+      }
+    });
+    setTimeout(()=>{
+      const img = canvas.toDataURL('image/png');
+      ch.destroy(); canvas.remove();
+      resolve(img);
+    }, 120);
+  });
+}
+
+/* ============================================================
+ *  SETTINGS
+ * ============================================================ */
+function applyTheme(){
+  document.body.setAttribute('data-theme', state.settings.theme);
+  document.getElementById('toggle-theme').classList.toggle('on', state.settings.theme==='dark');
+  document.querySelector('meta[name=theme-color]').setAttribute('content', state.settings.theme==='dark' ? '#1e1e1e' : '#1565c0');
+  Object.values(state.charts).forEach(c=>{ try{c.destroy()}catch(e){} });
+  state.charts = {};
+  const v = state.ui.view;
+  if(v==='overview') renderOverview();
+  else if(v==='history') renderHistory();
+  else if(v==='stats') renderStats();
+}
+function toggleTheme(){
+  state.settings.theme = state.settings.theme==='dark' ? 'light' : 'dark';
+  save(); applyTheme();
+}
+function toggleSetting(key, el){
+  state.settings[key] = !state.settings[key];
+  el.classList.toggle('on', state.settings[key]);
+  save();
+  if(state.ui.view==='overview') renderOverview();
+  if(state.ui.view==='history') renderHistory();
+}
+function saveUserField(k, v){ state.settings.user[k] = v; save(); }
+function saveThreshold(k, v){ state.settings.thresholds[k] = parseInt(v)||0; save(); }
+function resetThresholds(){
+  state.settings.thresholds = { sysNormal:130, sysHigh:140, diaNormal:85, diaHigh:90 };
+  save(); renderSettings(); toast('Grenzwerte zurückgesetzt');
+}
+function renderSettings(){
+  document.getElementById('toggle-theme').classList.toggle('on', state.settings.theme==='dark');
+  document.getElementById('toggle-highlight').classList.toggle('on', state.settings.highlight);
+  ['name','dob','doctor','meds'].forEach(k=> document.getElementById('set-'+k).value = state.settings.user[k] || '');
+  ['sysNormal','sysHigh','diaNormal','diaHigh'].forEach(k=>{
+    const id = 'th-'+(k==='sysNormal'?'sys-normal':k==='sysHigh'?'sys-high':k==='diaNormal'?'dia-normal':'dia-high');
+    document.getElementById(id).value = state.settings.thresholds[k];
+  });
+  updateStorageInfo();
+}
+
+/* ============================================================
+ *  TOAST
+ * ============================================================ */
+let toastT;
+function toast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  clearTimeout(toastT);
+  toastT = setTimeout(()=>t.classList.remove('show'), 2400);
+}
+
+/* ============================================================
+ *  TOP-BAR BUTTONS
+ * ============================================================ */
+document.getElementById('btn-add-top').addEventListener('click', openAdd);
+document.getElementById('btn-sync-top').addEventListener('click', openSync);
+
+/* ============================================================
+ *  START
+ * ============================================================ */
+load();
+applyTheme();
+renderSettings();
+setView('overview');
+</script>
+</body>
+</html>
