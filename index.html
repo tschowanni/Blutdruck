@@ -134,70 +134,98 @@
     --primary:#1565c0;
     --primary-light:#1976d2;
     --primary-dark:#0d47a1;
-    --primary-50:#e3ecf5;
-    --primary-100:#c5d8ec;
-    --on-primary:#edf2f7;
-    --bg:#ecedef;
-    --surface:#f6f5f3;
-    --surface-2:#e9e8e5;
-    --border:#d7d6d3;
-    --border-2:#e4e2df;
-    --text:#1e2125;
-    --text-2:#3c4148;
-    --text-3:#6a6f77;
-    --text-4:#9ca1a8;
+    --primary-50:#dce6f1;
+    --primary-100:#b6cce0;
+    --on-primary:#eef2f7;
+    /* Hell: leicht dunklerer, etwas wärmerer Hintergrund gegen Blend-/Tageslicht */
+    --bg:#d9dce2;
+    --surface:#e6e6e2;
+    --surface-2:#d1d2cf;
+    --border:#bcbcb8;
+    --border-2:#cacbc7;
+    --text:#1b1e22;
+    --text-2:#3a3e44;
+    --text-3:#61666d;
+    --text-4:#8f949a;
     --ok:#2e7d32;
-    --ok-bg:#dfead9;
+    --ok-bg:#d3e3cc;
     --warn:#ef6c00;
-    --warn-bg:#f6e6d0;
+    --warn-bg:#ecd9bd;
     --danger:#c62828;
-    --danger-bg:#eed5d5;
+    --danger-bg:#e4c8c8;
     --danger-dark:#b71c1c;
     --info:#0277bd;
-    --info-bg:#d8e4ed;
+    --info-bg:#ccdce7;
     --purple:#6a1b9a;
-    --purple-bg:#e5d6ea;
-    --shadow-1:0 1px 2px rgba(0,0,0,.06),0 1px 3px rgba(0,0,0,.04);
-    --shadow-2:0 2px 4px rgba(0,0,0,.10),0 2px 6px rgba(0,0,0,.05);
-    --shadow-app:0 2px 4px rgba(0,0,0,.12);
+    --purple-bg:#dac8de;
+    --shadow-1:0 1px 2px rgba(0,0,0,.07),0 1px 3px rgba(0,0,0,.05);
+    --shadow-2:0 2px 4px rgba(0,0,0,.12),0 2px 6px rgba(0,0,0,.06);
+    --shadow-app:0 2px 4px rgba(0,0,0,.13);
     --radius:8px;
     --radius-sm:6px;
-    --ico-pulse:#ff8a80;
-    --ico-add:#b9f6ca;
-    --ico-sync:#b3e5fc;
+    /* Farbige Icons (gilt im hellen und dunklen Design) */
+    --ico-pulse:#ff6b6b;
+    --ico-add:#8ee6aa;
+    --ico-sync:#7fcdf0;
+    /* Akzente für Nav-Leiste, Buttons, Chart-Elemente */
+    --ico-home:#4a6fa5;
+    --ico-chart:#2e8b87;
+    --ico-bars:#c06a52;
+    --ico-db:#9174a8;
+    --ico-gear:#6b7a85;
+    --ico-export:#7c3aed;
+    --ico-import:#059669;
+    --ico-csv:#d97706;
+    --ico-pdf:#c62828;
+    --ico-trash:#b71c1c;
+    --ico-clock:#0277bd;
   }
   [data-theme="dark"]{
-    --primary:#64b5f6;
-    --primary-light:#90caf9;
-    --primary-dark:#42a5f5;
-    --primary-50:#1e3a57;
-    --primary-100:#23486b;
-    --on-primary:#e8edf3;
-    --bg:#1f2125;
-    --surface:#2a2d31;
-    --surface-2:#34373c;
-    --border:#3a3e44;
-    --border-2:#323539;
-    --text:#dde0e4;
-    --text-2:#b5b9bf;
-    --text-3:#8a8f96;
-    --text-4:#656a71;
-    --ok:#81c784;
-    --ok-bg:#1f3a22;
-    --warn:#ffb74d;
-    --warn-bg:#3b2b14;
-    --danger:#ef5350;
-    --danger-bg:#3c1f1f;
-    --danger-dark:#ef5350;
-    --info:#4fc3f7;
-    --info-bg:#173044;
-    --purple:#ba68c8;
-    --purple-bg:#2d1932;
-    --shadow-1:0 1px 3px rgba(0,0,0,.35);
-    --shadow-2:0 2px 6px rgba(0,0,0,.45);
-    --shadow-app:0 2px 4px rgba(0,0,0,.45);
+    --primary:#7fb6ee;
+    --primary-light:#a4ccf0;
+    --primary-dark:#5f9ed6;
+    --primary-50:#2b4e72;
+    --primary-100:#355e85;
+    --on-primary:#f3f5f8;
+    /* Dunkel: merklich aufgehellter Hintergrund, deutlich hellere Schrift */
+    --bg:#363b42;
+    --surface:#43474e;
+    --surface-2:#4e535a;
+    --border:#5a6068;
+    --border-2:#4a4f56;
+    --text:#f3f5f8;
+    --text-2:#dde1e6;
+    --text-3:#b8bdc3;
+    --text-4:#8c9197;
+    --ok:#a5d6a7;
+    --ok-bg:#2c4d30;
+    --warn:#ffcc80;
+    --warn-bg:#4e3a1d;
+    --danger:#ef9a9a;
+    --danger-bg:#4e2929;
+    --danger-dark:#ef9a9a;
+    --info:#81d4fa;
+    --info-bg:#1f3e56;
+    --purple:#ce93d8;
+    --purple-bg:#3a2140;
+    --shadow-1:0 1px 3px rgba(0,0,0,.45);
+    --shadow-2:0 2px 6px rgba(0,0,0,.55);
+    --shadow-app:0 2px 4px rgba(0,0,0,.55);
+    /* Im Dunkel-Modus hellere Varianten der Akzent-Icons */
+    --ico-pulse:#ff8a80;
     --ico-add:#a5e8bd;
     --ico-sync:#9bcfe4;
+    --ico-home:#88b4d5;
+    --ico-chart:#8fc9c4;
+    --ico-bars:#e8a992;
+    --ico-db:#c5a5d3;
+    --ico-gear:#a5afb7;
+    --ico-export:#c8a2ff;
+    --ico-import:#76d5a7;
+    --ico-csv:#f3b96a;
+    --ico-pdf:#ef9a9a;
+    --ico-trash:#ef9a9a;
+    --ico-clock:#81d4fa;
   }
 
   *,*::before,*::after{box-sizing:border-box}
@@ -260,14 +288,19 @@
   .chip.high .dt{background:var(--danger)}
   .chip.info .dt{background:var(--info)}
 
-  .list .item{padding:12px 16px;border-bottom:1px solid var(--border-2);display:grid;grid-template-columns:1fr auto auto;gap:12px;align-items:center}
+  /* Feste Spalten: Datum/Zeit/Arm (flex) · BP-Werte (fix) · Klassifikation (fix)
+     Dadurch keine Verschiebung mehr, wenn ein Chip kürzer/länger wird. */
+  .list .item{padding:12px 14px;border-bottom:1px solid var(--border-2);display:grid;grid-template-columns:minmax(0,1fr) 74px 82px;column-gap:10px;align-items:center}
   .list .item:last-child{border-bottom:none}
-  .list .item .dt-col{color:var(--text);font-size:.875rem}
-  .list .item .dt-col small{display:block;color:var(--text-4);font-size:.69rem;margin-top:1px}
-  .list .item .bp-col{font-size:.94rem;font-weight:500;color:var(--primary);letter-spacing:-.3px;text-align:right;min-width:72px}
-  .list .item .bp-col small{color:var(--text-4);font-weight:400;font-size:.69rem;display:block;margin-top:1px}
+  .list .item .dt-col{color:var(--text);font-size:.875rem;min-width:0;line-height:1.25}
+  .list .item .dt-col .dt-main{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .list .item .dt-col small{display:block;color:var(--text-4);font-size:.69rem;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .list .item .bp-col{font-size:.94rem;font-weight:500;color:var(--primary);letter-spacing:-.3px;text-align:right;white-space:nowrap;line-height:1.2}
+  .list .item .bp-col small{color:var(--text-4);font-weight:400;font-size:.69rem;display:block;margin-top:1px;white-space:nowrap}
+  /* Chip in Liste: fix auf Spaltenbreite gestretcht, Text zentriert & einzeilig */
+  .list .item > .chip{width:100%;box-sizing:border-box;justify-content:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;padding-left:6px;padding-right:6px}
   .list .item.alert{background:linear-gradient(90deg,rgba(198,40,40,.05),transparent)}
-  [data-theme="dark"] .list .item.alert{background:linear-gradient(90deg,rgba(239,83,80,.08),transparent)}
+  [data-theme="dark"] .list .item.alert{background:linear-gradient(90deg,rgba(239,154,154,.10),transparent)}
 
   .flag-ic{display:inline-flex;align-items:center;justify-content:center;gap:2px;padding:1px 5px;border-radius:4px;font-size:.65rem;font-weight:600;margin-left:4px;cursor:help}
   .flag-ic.mov{background:var(--warn-bg);color:var(--warn)}
@@ -275,9 +308,16 @@
 
   .bottom-nav{position:fixed;bottom:0;left:0;right:0;background:var(--surface);border-top:1px solid var(--border);padding:6px 4px calc(6px + env(safe-area-inset-bottom));display:flex;z-index:40;box-shadow:0 -1px 4px rgba(0,0,0,.06)}
   .nav-btn{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:8px 4px;background:transparent;border:none;color:var(--text-3);font-size:.625rem;font-weight:500;letter-spacing:.3px;border-radius:8px;transition:background .15s}
-  .nav-btn.active{color:var(--primary)}
   .nav-btn:active{background:var(--surface-2)}
   .nav-btn svg{width:22px;height:22px}
+  /* Farbige Icons pro Tab (Inaktiv); im Aktiv-Zustand dominiert Primary-Farbe */
+  .nav-btn[data-view="overview"] svg{color:var(--ico-home)}
+  .nav-btn[data-view="history"]  svg{color:var(--ico-chart)}
+  .nav-btn[data-view="stats"]    svg{color:var(--ico-bars)}
+  .nav-btn[data-view="data"]     svg{color:var(--ico-db)}
+  .nav-btn[data-view="settings"] svg{color:var(--ico-gear)}
+  .nav-btn.active{color:var(--primary)}
+  .nav-btn.active svg{color:var(--primary)}
 
   .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:11px 16px;border:none;border-radius:var(--radius-sm);font-size:.82rem;font-weight:500;letter-spacing:.4px;text-transform:uppercase;cursor:pointer;transition:background .15s}
   .btn.primary{background:var(--primary);color:var(--on-primary);box-shadow:0 2px 4px rgba(21,101,192,.3)}
@@ -516,7 +556,7 @@
     <div class="section-body">
       <p style="margin:0 0 12px;font-size:.82rem;color:var(--text-2);line-height:1.5">Messung ohne Gerät eintragen.</p>
       <button class="btn ghost" style="width:100%" onclick="openAdd()">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        <svg viewBox="0 0 24 24" fill="none" stroke="var(--ico-import)" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
         Messung hinzufügen
       </button>
     </div>
@@ -546,15 +586,15 @@
     <div class="section-body">
       <div class="btn-row">
         <button class="btn outline" onclick="exportJSON()">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke="var(--ico-export)" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
           Export
         </button>
         <button class="btn outline" onclick="document.getElementById('file-import').click()">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke="var(--ico-import)" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
           Import
         </button>
         <button class="btn outline full" onclick="exportCSV()">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="3" x2="9" y2="21"/></svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke="var(--ico-csv)" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="3" x2="9" y2="21"/></svg>
           CSV-Export (Tabelle)
         </button>
       </div>
@@ -566,7 +606,7 @@
     <div class="card-head"><h4 style="color:var(--danger)">Gefahrenzone</h4></div>
     <div class="section-body">
       <button class="btn outline" style="width:100%;color:var(--danger);border-color:var(--danger)" onclick="confirmDeleteAll()">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-2 14a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L5 6M10 11v6M14 11v6M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+        <svg viewBox="0 0 24 24" fill="none" stroke="var(--ico-trash)" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-2 14a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L5 6M10 11v6M14 11v6M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
         Alle Daten löschen
       </button>
     </div>
@@ -713,30 +753,31 @@
         <div><b>Wichtig: OMRON Connect App schließen</b>Das Gerät erlaubt nur <b>eine Verbindung gleichzeitig</b>. Läuft die OMRON Connect App im Hintergrund, blockiert sie diese App.</div>
       </div>
 
-      <!-- HINWEIS ERSTMALIGES KOPPELN (Default beim ersten Öffnen) -->
+      <!-- HINWEIS ERSTMALIGES KOPPELN (Pairing-Modus, Default beim ersten Öffnen) -->
       <div class="alert-banner info" id="hint-first-pair" style="margin-bottom:10px">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
         <div>
-          <b>Erstmaliges Koppeln &middot; Taste durchgehend gedrückt halten</b>
-          <div style="margin-top:4px">1. <b>Bluetooth-Taste</b> am OMRON M7 drücken und <b>gedrückt halten</b>, bis „<b>-P-</b>" im Display blinkt.</div>
-          <div>2. Taste <b>weiter gedrückt halten</b> und auf „<b>Verbinden</b>" tippen.</div>
-          <div>3. Taste <b>erst loslassen</b>, wenn die Messwerte gelesen wurden.</div>
-          <div style="margin-top:6px;opacity:.85">Das Gerät macht seinen Datenkanal nur sichtbar, solange die Taste aktiv gedrückt ist. Ohne Dauerdruck meldet es nur Standard-Bluetooth-Services.</div>
+          <b>Erstmaliges Koppeln &middot; Pairing-Modus</b>
+          <div style="margin-top:4px">1. Bluetooth-Taste am OMRON M7 <b>3-5 Sekunden gedrückt halten</b><br>&nbsp;&nbsp;&nbsp;&nbsp;→ Display zeigt blinkendes „<b>-P-</b>" (Pairing-Modus)</div>
+          <div>2. Dann auf „<b>Verbinden</b>" tippen</div>
+          <div style="margin-top:6px;opacity:.85">Nach erfolgreichem Koppeln wird für die tägliche Synchronisation der Transfer-Modus verwendet (ein kurzer Tastendruck).</div>
         </div>
       </div>
 
-      <!-- HINWEIS NORMALBETRIEB (nur nach erfolgreichem Pairing sichtbar) -->
+      <!-- HINWEIS NORMALBETRIEB (Transfer-Modus, nach erfolgreichem Pairing sichtbar) -->
       <div class="alert-banner info" id="hint-normal" style="margin-bottom:10px;display:none">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
         <div>
-          <b>Bereit zum Synchronisieren</b>
-          Schalten Sie das OMRON M7 ein und tippen Sie auf „<b>Verbinden</b>".
+          <b>So synchronisieren Sie &middot; Transfer-Modus</b>
+          <div style="margin-top:4px">1. Bluetooth-Taste am OMRON M7 <b>einmal kurz drücken</b><br>&nbsp;&nbsp;&nbsp;&nbsp;→ Display zeigt blinkendes „<b>O</b>" (Transfer-Modus)</div>
+          <div>2. Sofort danach auf „<b>Verbinden</b>" tippen (innerhalb ~5 Sekunden)</div>
+          <div style="margin-top:6px;opacity:.85">Das „O"-Zeichen signalisiert: Daten-Service ist für ca. 3 Minuten sichtbar.</div>
         </div>
       </div>
 
       <!-- TOGGLE: Erstmalig koppeln-Modus erzwingen (nur sichtbar wenn bereits gepairt) -->
       <button class="btn outline" id="btn-toggle-pair-mode" onclick="toggleFirstPairMode()" style="width:100%;margin-bottom:12px;display:none">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+        <svg viewBox="0 0 24 24" fill="none" stroke="var(--ico-sync)" stroke-width="2"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
         <span id="btn-toggle-pair-text">Erstmalig koppeln</span>
       </button>
       <div class="progress-wrap" id="sync-progress" style="display:none">
@@ -909,12 +950,12 @@ function pad2(n){ return String(n).padStart(2,'0'); }
  *  KLASSIFIKATION (ESH/WHO)
  * ============================================================ */
 const CLASSES = [
-  { key:'opt', label:'Optimal',         sysMax:120, diaMax:80,  color:'#2e7d32' },
-  { key:'nor', label:'Normal',          sysMax:130, diaMax:85,  color:'#66bb6a' },
-  { key:'hn',  label:'Hoch-Normal',     sysMax:140, diaMax:90,  color:'#fbc02d' },
-  { key:'h1',  label:'Hypertonie Gr.1', sysMax:160, diaMax:100, color:'#fb8c00' },
-  { key:'h2',  label:'Hypertonie Gr.2', sysMax:180, diaMax:110, color:'#e53935' },
-  { key:'h3',  label:'Hypertonie Gr.3', sysMax:999, diaMax:999, color:'#b71c1c' }
+  { key:'opt', label:'Optimal',         short:'Optimal',  sysMax:120, diaMax:80,  color:'#2e7d32' },
+  { key:'nor', label:'Normal',          short:'Normal',   sysMax:130, diaMax:85,  color:'#66bb6a' },
+  { key:'hn',  label:'Hoch-Normal',     short:'Hoch-N.',  sysMax:140, diaMax:90,  color:'#fbc02d' },
+  { key:'h1',  label:'Hypertonie Gr.1', short:'Hyp. 1',   sysMax:160, diaMax:100, color:'#fb8c00' },
+  { key:'h2',  label:'Hypertonie Gr.2', short:'Hyp. 2',   sysMax:180, diaMax:110, color:'#e53935' },
+  { key:'h3',  label:'Hypertonie Gr.3', short:'Hyp. 3',   sysMax:999, diaMax:999, color:'#b71c1c' }
 ];
 function classify(sys, dia){
   for(const c of CLASSES){ if(sys < c.sysMax && dia < c.diaMax) return c; }
@@ -1073,10 +1114,11 @@ function rowHtml(r){
   const alert = ['h1','h2','h3'].includes(c.key);
   let cls = 'normal'; if(c.key==='hn') cls='elev'; else if(alert) cls='high';
   const noteTxt = (r.note ? ' · '+escape(r.note) : '');
+  const armLbl  = r.arm==='rechts' ? 'rechter' : 'linker';
   return `<div class="item ${alert && state.settings.highlight?'alert':''}">
-    <div class="dt-col">${fmt.dateTime(r.ts)}<small>${r.arm==='rechts'?'rechter':'linker'} Arm${noteTxt} ${flagsHtml(r)}</small></div>
+    <div class="dt-col"><span class="dt-main">${fmt.dateTime(r.ts)}</span><small>${armLbl} Arm${noteTxt} ${flagsHtml(r)}</small></div>
     <div class="bp-col">${r.sys}/${r.dia}<small>Puls ${r.pul}</small></div>
-    <span class="chip ${cls}"><span class="dt"></span>${c.label}</span>
+    <span class="chip ${cls}" title="${c.label}"><span class="dt"></span>${c.short||c.label}</span>
   </div>`;
 }
 function escape(s){ return String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
@@ -1344,17 +1386,15 @@ class OmronBleManager {
     const onlyStandard = list.length > 0 && list.every(s => SIG.test(String(s.uuid)));
     if(onlyStandard){
       throw new Error(
-        'Das OMRON M7 ist NICHT im Datenübertragungsmodus.\n\n' +
+        'OMRON-Transfer-Modus nicht aktiv.\n\n' +
+        'Das Gerät ist im Standby — der Daten-Service ist nicht sichtbar.\n' +
         'Es werden nur Standard-Bluetooth-Services gemeldet:\n  · ' + uuidStr + '\n\n' +
-        'Der Vendor-Service wird vom Gerät nur exponiert, während die\n' +
-        'Bluetooth-Taste gedrückt ist. Bitte exakt in dieser Reihenfolge:\n\n' +
-        '1. OMRON Connect App beenden (Recent-Apps wegwischen)\n' +
-        '2. Bluetooth-Taste am OMRON M7 DRÜCKEN UND GEDRÜCKT HALTEN\n' +
-        '   bis "-P-" im Display blinkt\n' +
-        '3. Taste WEITER GEDRÜCKT HALTEN und "Verbinden" tippen\n' +
-        '4. Taste erst loslassen, wenn die Messwerte gelesen werden\n\n' +
-        'Wenn Bluetooth bereits gekoppelt ist: ggf. in Android\n' +
-        'Einstellungen → Bluetooth → Gerät "vergessen" und neu koppeln.'
+        'Bitte so vorgehen:\n' +
+        '1. Bluetooth-Taste am OMRON M7 EINMAL KURZ drücken\n' +
+        '   → Display zeigt blinkendes "O"\n' +
+        '2. SOFORT danach (innert 5 Sekunden) auf "Verbinden" tippen\n\n' +
+        'Hinweis: Für erstmaliges Koppeln stattdessen die Taste\n' +
+        '3-5 Sekunden gedrückt halten bis "-P-" blinkt.'
       );
     }
     throw new Error(
@@ -1481,30 +1521,14 @@ class OmronBleManager {
          in der Discovery nicht zurückgibt — selbst wenn er in
          optionalServices steht (Web Bluetooth CG Issues #451 / #513).
          Daher ALLE Services abrufen, loggen und selbst filtern.
-         Retry-Schleife: der Vendor-Service erscheint manchmal erst nach
-         ein paar Sekunden, während das Gerät im Transfer-Modus ist. */
+         KEIN Retry: der Vendor-Service wird nur im aktiven Transfer-
+         oder Pairing-Modus exponiert — Warten hilft nicht. */
       let allServices = [];
-      const MAX_TRIES = 4;
-      const RETRY_DELAY = 1500;                    /* ms */
-      const VENDOR_SET = new Set(OmronBleManager.VENDOR_UUIDS);
-      for(let attempt = 1; attempt <= MAX_TRIES; attempt++){
-        try{
-          allServices = await this.server.getPrimaryServices();
-        }catch(e){
-          this._log(`Versuch ${attempt}/${MAX_TRIES} — getPrimaryServices-Fehler: ${e.message}`);
-          if(attempt === MAX_TRIES) throw new Error(`Service-Discovery fehlgeschlagen (${e.message}).\nBitte Log kopieren und melden.`);
-          await new Promise(r => setTimeout(r, RETRY_DELAY));
-          continue;
-        }
-        const hasVendor = allServices.some(s => VENDOR_SET.has(String(s.uuid).toLowerCase()));
-        if(hasVendor){
-          this._log(`Versuch ${attempt}/${MAX_TRIES} — Vendor-Service erscheint in Liste`);
-          break;
-        }
-        if(attempt < MAX_TRIES){
-          this._log(`Versuch ${attempt}/${MAX_TRIES} — Vendor-Service noch nicht sichtbar, warte ${RETRY_DELAY} ms (Taste am Gerät weiter gedrückt halten!)`);
-          await new Promise(r => setTimeout(r, RETRY_DELAY));
-        }
+      try{
+        allServices = await this.server.getPrimaryServices();
+      }catch(e){
+        this._log(`getPrimaryServices-Fehler: ${e.message}`);
+        throw new Error(`Service-Discovery fehlgeschlagen (${e.message}).\nBitte Log kopieren und melden.`);
       }
       this._log(`Gefundene Services (${allServices.length}):`);
       allServices.forEach(s => this._log(`  · ${s.uuid}`));
@@ -2450,7 +2474,7 @@ document.getElementById('btn-sync-top').addEventListener('click', openSync);
       && s3err.message.includes('00001800-0000-1000-8000-00805f9b34fb'),
       'Test S3: Fehlermeldung muss alle vorhandenen UUIDs enthalten.');
 
-    /* Test S4 — NUR Standard-Services (0000xxxx-…) → spezifische Diagnose-Message */
+    /* Test S4 — NUR Standard-Services → Transfer-Modus-Diagnose */
     let s4err = null;
     try{ OmronBleManager._filterVendorService([
       { uuid:'00001800-0000-1000-8000-00805f9b34fb' },
@@ -2459,15 +2483,32 @@ document.getElementById('btn-sync-top').addEventListener('click', openSync);
     ]); }
     catch(e){ s4err = e; }
     console.assert(s4err
-      && /NICHT im Datenübertragungsmodus/.test(s4err.message)
-      && /gedrückt halten/i.test(s4err.message)
-      && /-P-/.test(s4err.message),
-      'Test S4: Bei nur Standard-Services muss Diagnose-Message mit "gedrückt halten" und "-P-" erscheinen.');
+      && /Transfer-Modus nicht aktiv/i.test(s4err.message)
+      && /EINMAL KURZ drücken/.test(s4err.message)
+      && /"O"/.test(s4err.message),
+      'Test S4: Diagnose-Message muss Transfer-Modus erklären (EINMAL KURZ drücken, "O").');
 
     /* Test S5 — Alt-Vendor-UUID ecbe3982 wird ebenfalls akzeptiert */
     const altVendor = { uuid:'ecbe3982-c9a2-11e1-b1bd-0002a5d5c51b' };
     const s5svc = OmronBleManager._filterVendorService([fakeOther, altVendor]);
     console.assert(s5svc === altVendor, 'Test S5: Alt-Variante ecbe3982-… muss als Vendor-Service erkannt werden.');
+
+    /* Test S6 — connect() darf KEINE Retry-Schleife mehr enthalten */
+    const connectBody = OmronBleManager.prototype.connect.toString();
+    const hasSetTimeout = /setTimeout\s*\(/.test(connectBody);
+    const hasAttemptLoop = /attempt[\s\S]{0,50}<=?\s*MAX_TRIES|for\s*\([^)]*attempt/.test(connectBody);
+    console.assert(!hasSetTimeout && !hasAttemptLoop,
+      'Test S6: connect() darf kein setTimeout und keine attempt-Schleife für getPrimaryServices enthalten.');
+
+    /* Test S7 — hint-normal enthält Transfer-Modus-Anleitung */
+    const hintNormal = document.getElementById('hint-normal');
+    const normalText = hintNormal ? hintNormal.textContent : '';
+    console.assert(
+      /einmal kurz drücken/i.test(normalText) &&
+      /Transfer-Modus/.test(normalText) &&
+      /„O"|"O"/.test(normalText),
+      'Test S7: hint-normal muss Transfer-Modus-Anleitung enthalten (einmal kurz drücken, "O").'
+    );
 
     /* Tests P2/P3/P4 asynchron sequentiell — sonst racet omronIsPaired */
     (async ()=>{
@@ -2493,7 +2534,7 @@ document.getElementById('btn-sync-top').addEventListener('click', openSync);
       console.assert(caught && isGerman, 'Test P4: Deutsche Pairing-Fehlermeldung erwartet, bekommen: '+msg);
 
       omronIsPaired = false;   /* Production-Zustand: nach Tests immer false */
-      console.log('✓ Alle 15 Selbsttests bestanden (Bit-Extraktion, XOR, Duplikat, Leer-Record, PWA-Manifest, P1a Filter, P1b getPrimaryServices, P2 Unlock, P3 Pair-Flow, P4 Timeout, S1 Leere-Service-Liste, S2 Vendor-UUID-Match, S3 Fehlende-UUID-Liste, S4 Nur-Standard-Services, S5 Alt-Vendor-UUID).');
+      console.log('✓ Alle 17 Selbsttests bestanden (Bit-Extraktion, XOR, Duplikat, Leer-Record, PWA-Manifest, P1a Filter, P1b getPrimaryServices, P2 Unlock, P3 Pair-Flow, P4 Timeout, S1 Leere-Service-Liste, S2 Vendor-UUID-Match, S3 Fehlende-UUID-Liste, S4 Transfer-Modus-Diagnose, S5 Alt-Vendor-UUID, S6 Kein-Retry, S7 hint-normal-Text).');
     })();
   }catch(e){ console.error('Selbsttest-Fehler:', e); }
 })();
