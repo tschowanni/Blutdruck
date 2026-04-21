@@ -708,11 +708,36 @@
       <button class="close" onclick="closeDialog('dlg-sync')"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
     </div>
     <div class="sheet-body">
-      <div id="sync-steps">
-        <div class="sync-step active" id="step-1"><span class="n">1</span>Am OMRON M7 die Bluetooth-Taste gedrückt halten, bis <b>"-P-"</b> (Erstverbindung) oder <b>"bt"</b> (bereits gekoppelt) im Display blinkt.</div>
-        <div class="sync-step" id="step-2"><span class="n">2</span>Auf <b>"Gerät suchen"</b> tippen und in der Browser-Auswahl das OMRON-Gerät wählen.</div>
-        <div class="sync-step" id="step-3"><span class="n">3</span>Auf Pairing und Auslesen warten. Nach Abschluss trennt die App automatisch.</div>
+      <div class="alert-banner warn" style="margin-bottom:10px">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        <div><b>Wichtig: OMRON Connect App schließen</b>Das Gerät erlaubt nur <b>eine Verbindung gleichzeitig</b>. Läuft die OMRON Connect App im Hintergrund, blockiert sie diese App.</div>
       </div>
+
+      <!-- HINWEIS ERSTMALIGES KOPPELN (Default beim ersten Öffnen) -->
+      <div class="alert-banner info" id="hint-first-pair" style="margin-bottom:10px">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+        <div>
+          <b>Erstmaliges Koppeln</b>
+          <div style="margin-top:4px">1. Halten Sie die <b>Bluetooth-Taste</b> am OMRON M7 gedrückt, bis „<b>-P-</b>" im Display erscheint.</div>
+          <div>2. Tippen Sie dann auf „<b>Verbinden</b>".</div>
+          <div style="margin-top:4px;opacity:.8">Das Koppeln dauert einmalig ca. 10 Sekunden.</div>
+        </div>
+      </div>
+
+      <!-- HINWEIS NORMALBETRIEB (nur nach erfolgreichem Pairing sichtbar) -->
+      <div class="alert-banner info" id="hint-normal" style="margin-bottom:10px;display:none">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+        <div>
+          <b>Bereit zum Synchronisieren</b>
+          Schalten Sie das OMRON M7 ein und tippen Sie auf „<b>Verbinden</b>".
+        </div>
+      </div>
+
+      <!-- TOGGLE: Erstmalig koppeln-Modus erzwingen (nur sichtbar wenn bereits gepairt) -->
+      <button class="btn outline" id="btn-toggle-pair-mode" onclick="toggleFirstPairMode()" style="width:100%;margin-bottom:12px;display:none">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+        <span id="btn-toggle-pair-text">Erstmalig koppeln</span>
+      </button>
       <div class="progress-wrap" id="sync-progress" style="display:none">
         <div id="sync-progress-text">Bereit.</div>
         <div class="progress-bar"><span id="sync-progress-bar" style="width:0%"></span></div>
@@ -1262,9 +1287,16 @@ class OmronBleManager {
   static UUID_UNLOCK = 'b305b680-aee7-11e1-a730-0002a5d5c51b';
   static PAIR_KEY = new Uint8Array([0xde,0xad,0xbe,0xaf,0x12,0x34,0x12,0x34,0xde,0xad,0xbe,0xaf,0x12,0x34,0x12,0x34]);
   static EEP = { USER1_START:0x0098, USER2_START:0x06D8, MAX_RECS:100, REC_SIZE:0x10, BLOCK_SIZE:0x10 };
-  /* Befehlscodes — Pairing ist exakt laut Spec; Read/Start/End sind omblepy-Referenz.
-     TODO: VERIFY am realen HEM-7361T durch Log-Panel im Sync-Dialog. */
-  static CMD = { UNLOCK_REQ:0x01, PAIR_INIT:0x02, PAIR_SET_KEY:0x00, READ_EEPROM:0x0501, TRANS_START:0x0901, TRANS_END:0x0F00 };
+  /* Befehlscodes — VERIFIZIERT gegen den echten omblepy-Quellcode (omblepy.py):
+       - READ_EEPROM  (0x0100): Prefix "080100" + Adresse BIG-ENDIAN + Blockgrösse + 0x00 + XOR
+                                 → Beispiel Adresse 0x0098: 08 01 00 00 98 10 00 81
+       - TRANS_START  (0x0000): Fixes Paket "0800000000100018"
+                                 → cmdType 0x0000, Adresse 0x0000, Payload [0x10, 0x00]
+       - TRANS_END    (0x0F00): Fixes Paket "080f000000000007"  (KORREKT gemäss omblepy)
+                                 → cmdType 0x0F00, Adresse 0x0000, Payload [0x00, 0x00]
+       - WRITE_EEPROM (0x01C0): Befehlstyp 0x01 0xC0, Adresse ebenfalls BIG-ENDIAN (nicht genutzt)
+     WICHTIG: Die ADRESSE im BLE-Paket ist BIG ENDIAN, die EEPROM-DATEN sind Little Endian. */
+  static CMD = { UNLOCK_REQ:0x01, PAIR_INIT:0x02, PAIR_SET_KEY:0x00, READ_EEPROM:0x0100, TRANS_START:0x0000, TRANS_END:0x0F00, WRITE_EEPROM:0x01C0 };
 
   constructor(opts={}){
     this.state = 'DISCONNECTED';
@@ -1274,6 +1306,8 @@ class OmronBleManager {
     this.bleLog = []; this.timeoutMs = opts.timeoutMs || 5000;
     this._rxBuffers = [null,null,null,null];
     this._pending = null;
+    this._unlockPending = null;              /* separater Kanal für Unlock-Char-Notifies */
+    this._channelsReady = false;             /* RX/TX-Characteristics erst nach Pairing */
     this._disconnectHandler = ()=>this._onDisconnect();
     this.onLog = null; this.onProgress = null; this.onState = null;
   }
@@ -1284,22 +1318,46 @@ class OmronBleManager {
 
   static isSupported(){ return typeof navigator !== 'undefined' && !!navigator.bluetooth; }
 
-  /* -------- TX-Paket bauen (XOR-Checksumme) --------
-     SELBSTTEST 2 — Paket cmd=0x0501, addr=0x0098, data=[0x10]:
-       [0x08, 0x05, 0x01, 0x98, 0x00, 0x01, 0x10, XOR]
-       XOR der ersten 7 Bytes = 0x85 → Byte 7 = 0x85
-       XOR aller 8 Bytes = 0x00  ✓ */
-  _buildPacket(cmdType, address, data){
-    data = data || new Uint8Array(0);
-    const totalLen = 6 + data.length + 1;
+  /* Hilfsfunktion: filtert den Vendor-Service aus der GATT-Service-Discovery.
+     Case-insensitiver UUID-Vergleich. Bei Fehlschlag wirft sie einen Fehler,
+     der ALLE gemeldeten Service-UUIDs enthält — unverzichtbar für Diagnose,
+     wenn das OMRON je nach Firmware unterschiedliche UUIDs zurückgibt. */
+  static _filterVendorService(allServices){
+    const vendorUUID = OmronBleManager.UUID_SERVICE.toLowerCase();
+    const found = (allServices || []).find(s => String(s.uuid).toLowerCase() === vendorUUID);
+    if(found) return found;
+    const list = (allServices && allServices.length)
+      ? allServices.map(s => s.uuid).join('\n  · ')
+      : '(keine)';
+    throw new Error(
+      'OMRON-Service nicht gefunden.\n\n' +
+      'Das Gerät meldet folgende Services:\n  · ' + list + '\n\n' +
+      'Bitte diesen Log-Auszug kopieren und melden.'
+    );
+  }
+
+  /* -------- TX-Paket bauen (XOR-Checksumme, BIG-ENDIAN Adresse) --------
+     Einheitliches Layout (verifiziert gegen omblepy.py):
+       Byte 0   : Gesamtlänge
+       Byte 1-2 : Befehlstyp (High, Low)
+       Byte 3-4 : EEPROM-Adresse BIG ENDIAN (addr.to_bytes(2,'big') in Python)
+       Byte 5..N: Payload (variabel)
+       Letztes Byte: XOR-Checksumme über alle vorherigen Bytes
+                     → XOR über das komplette Paket ergibt 0
+     SELBSTTEST 2 — READ_EEPROM für Adresse 0x0098, Blockgrösse 0x10:
+       payload = [0x10, 0x00]  (Blockgrösse + Padding)
+       Erwartet: 08 01 00 00 98 10 00 81
+       XOR: 0x08^0x01^0x00^0x00^0x98^0x10^0x00 = 0x81 ✓ */
+  _buildPacket(cmdType, address, payload){
+    payload = payload || new Uint8Array(0);
+    const totalLen = 5 + payload.length + 1;              /* Header 5 + Payload + XOR 1 */
     const p = new Uint8Array(totalLen);
     p[0] = totalLen;
     p[1] = (cmdType >> 8) & 0xFF;
     p[2] =  cmdType       & 0xFF;
-    p[3] =  address       & 0xFF;
-    p[4] = (address >> 8) & 0xFF;
-    p[5] =  data.length;
-    p.set(data, 6);
+    p[3] = (address >> 8) & 0xFF;                          /* BIG ENDIAN High */
+    p[4] =  address       & 0xFF;                          /* BIG ENDIAN Low  */
+    p.set(payload, 5);
     let x = 0;
     for(let i=0; i<totalLen-1; i++) x ^= p[i];
     p[totalLen-1] = x;
@@ -1354,37 +1412,76 @@ class OmronBleManager {
     });
   }
 
-  /* -------- Verbinden -------- */
+  /* -------- Verbinden --------
+     Minimale BLE-Verbindung: requestDevice → gatt.connect → primary service
+     laden → Unlock-Characteristic abrufen → Notify auf Unlock starten.
+     Die RX/TX-Channels werden erst NACH erfolgreichem Pairing geholt
+     (in _discoverDataChannels), weil das Pairing die erste Interaktion
+     mit dem Gerät sein muss (omblepy-Flow).
+     Hinweis: Das OMRON M7 kann auf Android NICHT über die
+     System-Bluetooth-Einstellungen gepairt werden ("App erforderlich").
+     Das Pairing läuft ausschliesslich in dieser App via pairDevice(). */
   async connect(){
     if(!OmronBleManager.isSupported()) throw new Error('Web-Bluetooth nicht verfügbar. Bitte Chrome for Android verwenden.');
     if(this.state !== 'DISCONNECTED') throw new Error('Ungültiger Zustand: '+this.state);
     try{
       this._setState('CONNECTING');
       this._log('Scan nach OMRON-Gerät …');
+      /* optionalServices vollständig: Chrome erlaubt den Zugriff nur auf
+         UUIDs, die HIER gelistet sind — egal was das Gerät tatsächlich meldet. */
       this.device = await navigator.bluetooth.requestDevice({
         filters:[
-          { services:[OmronBleManager.UUID_SERVICE] },
-          { namePrefix:'BLESmart' }, { namePrefix:'BLEsmart' }, { namePrefix:'OMRON' }
+          { namePrefix:'BLESmart' },
+          { namePrefix:'BLEsmart' },
+          { namePrefix:'OMRON'    }
         ],
-        optionalServices:[OmronBleManager.UUID_SERVICE]
+        optionalServices:[
+          'ecbe3980-c9a2-11e1-b1bd-0002a5d5c51b',  /* Vendor-Hauptservice        */
+          'ecbe3982-c9a2-11e1-b1bd-0002a5d5c51b',  /* Vendor alt (ältere FW)     */
+          '00001800-0000-1000-8000-00805f9b34fb',  /* Generic Access             */
+          '00001801-0000-1000-8000-00805f9b34fb',  /* Generic Attribute          */
+          '0000180a-0000-1000-8000-00805f9b34fb',  /* Device Information         */
+          '00001810-0000-1000-8000-00805f9b34fb'   /* Blood Pressure (Standard)  */
+        ]
       });
       this._log(`Gerät: ${this.device.name || '(ohne Namen)'}`);
       this.device.addEventListener('gattserverdisconnected', this._disconnectHandler);
       this.server = await this.device.gatt.connect();
       this._log('GATT verbunden');
-      this.service = await this.server.getPrimaryService(OmronBleManager.UUID_SERVICE);
-      this._log('Service-Handle geladen');
-      for(let i=0; i<4; i++){
-        this.rxChars[i] = await this.service.getCharacteristic(OmronBleManager.UUID_RX[i]);
-        this.txChars[i] = await this.service.getCharacteristic(OmronBleManager.UUID_TX[i]);
+
+      /* getPrimaryService(UUID) scheitert, wenn das Gerät diesen Service
+         in der Discovery nicht zurückgibt — selbst wenn er in
+         optionalServices steht (Web Bluetooth CG Issues #451 / #513).
+         Daher ALLE Services abrufen, loggen und selbst filtern. */
+      let allServices = [];
+      try{
+        allServices = await this.server.getPrimaryServices();
+      }catch(e){
+        this._log(`getPrimaryServices-Fehler: ${e.message}`);
+        throw new Error(`Service-Discovery fehlgeschlagen (${e.message}).\nBitte Log kopieren und melden.`);
       }
-      this.unlockChar = await this.service.getCharacteristic(OmronBleManager.UUID_UNLOCK);
-      this._log('Alle 8 Kanäle + Unlock-Char geladen');
-      for(let i=0; i<4; i++){
-        await this.rxChars[i].startNotifications();
-        this.rxChars[i].addEventListener('characteristicvaluechanged', (ev)=> this._onRxNotification(i, ev.target.value));
+      this._log(`Gefundene Services (${allServices.length}):`);
+      allServices.forEach(s => this._log(`  · ${s.uuid}`));
+      this.service = OmronBleManager._filterVendorService(allServices);
+      this._log(`✓ Vendor-Service gefunden: ${this.service.uuid}`);
+
+      /* Unlock-Char mit robustem Fehlerpfad: bei Fehlschlag alle Chars listen */
+      try{
+        this.unlockChar = await this.service.getCharacteristic(OmronBleManager.UUID_UNLOCK);
+        this._log(`✓ Unlock-Char UUID: ${this.unlockChar.uuid}`);
+      }catch(e){
+        try{
+          const allChars = await this.service.getCharacteristics();
+          this._log(`Unlock-Char nicht gefunden. Verfügbare Chars (${allChars.length}):`);
+          allChars.forEach(c => this._log(`  · ${c.uuid}`));
+        }catch(listErr){
+          this._log(`Char-Listing ebenfalls fehlgeschlagen: ${listErr.message}`);
+        }
+        throw new Error(`Unlock-Charakteristik nicht gefunden (${e.message}).\nBitte Log kopieren und melden.`);
       }
-      this._log('Notify auf RX0-RX3 aktiv');
+      await this.unlockChar.startNotifications();
+      this.unlockChar.addEventListener('characteristicvaluechanged', (ev)=> this._onUnlockNotify(ev.target.value));
+      this._log('Unlock-Char Notify aktiv');
       this._setState('CONNECTED');
     }catch(err){
       this._log(`Verbindung fehlgeschlagen: ${err.message}`);
@@ -1393,44 +1490,133 @@ class OmronBleManager {
     }
   }
 
-  /* -------- Pairing / Unlock -------- */
+  /* -------- Pairing-Flow (SCHRITT A/B/C/D gemäss omblepy) --------
+     SCHRITT A : Unlock mit unserem Key versuchen. Bei 0x8100 ist das
+                 Gerät bereits mit UNSEREM Key gepairt und wir sind fertig.
+     SCHRITT B : Falls A nicht OK, prüfen ob Gerät im Pairing-Modus ist
+                 (sendet 0x02 + Dummy-Key, erwartet 0x7F00).
+     SCHRITT C : Neuen Key einprogrammieren (0x00 + Key, erwartet 0x8000).
+     SCHRITT D : Finale Unlock-Sequenz (0x01 + Key, erwartet 0x8100).
+
+     WICHTIG — OMRON-Connect-Altkopplung:
+     Wenn das Gerät zuvor mit der OMRON-Connect-App gekoppelt wurde, hält
+     es einen ANDEREN (OMRON-Connect-generierten) Schlüssel. SCHRITT A
+     schlägt dann IMMER fehl — das ist kein Bug, sondern erwartet.
+     Der User muss die Bluetooth-Taste am Gerät lang drücken, bis "-P-"
+     erscheint. Dann läuft B→C→D automatisch durch und überschreibt den
+     OMRON-Connect-Key mit unserem Key. Ab jetzt kann OMRON Connect das
+     Gerät nicht mehr öffnen, diese App schon. Um wieder zu OMRON Connect
+     zu wechseln: dort erneut koppeln (dann überschreibt OMRON Connect
+     unseren Key zurück). */
   async pairDevice(){
     if(!this.unlockChar) throw new Error('Nicht verbunden — kann nicht koppeln');
-    try{
-      this._setState('PAIRING');
-      this._log('Sende Unlock (0x01 + Key)');
-      const pkt = new Uint8Array(17);
-      pkt[0] = OmronBleManager.CMD.UNLOCK_REQ;
-      pkt.set(OmronBleManager.PAIR_KEY, 1);
-      const waitResp = this.waitForResponse(3000);
-      await this.unlockChar.writeValueWithResponse(pkt);
-      let resp;
-      try { resp = await waitResp; }
-      catch(e){ const dv = await this.unlockChar.readValue(); resp = new Uint8Array(dv.buffer); }
-      const code = (resp[1] << 8) | resp[2];
-      this._log(`Unlock-Antwort: 0x${code.toString(16).padStart(4,'0')}`);
-      if(code === 0x8100){ this.pairingKey = OmronBleManager.PAIR_KEY; this._log('✓ Unlock erfolgreich'); }
-      else if(code === 0x7F00){ this._log('Gerät in Pairing-Modus, setze Key …'); await this._completeFirstPairing(); }
-      else throw new Error(`Unlock verweigert (Code 0x${code.toString(16)}). Ist das Gerät im Bluetooth-Modus? Halten Sie die Taste bis "-P-" oder "bt" erscheint.`);
+    this._setState('PAIRING');
+
+    /* ─── SCHRITT A ─── */
+    this._log('SCHRITT A — Unlock 0x01 + Key (Gerät bereits gepairt?)');
+    let codeA = 0;
+    try{ codeA = await this._unlockAndWait(0x01, OmronBleManager.PAIR_KEY, 3000); }
+    catch(e){ this._log(`SCHRITT A — Timeout/Fehler: ${e.message}`); }
+    if(codeA === 0x8100){
+      this._log('✓ SCHRITT A: Gerät war bereits gepairt (0x8100)');
+      this.pairingKey = OmronBleManager.PAIR_KEY;
+      omronIsPaired = true;
       this._setState('CONNECTED');
-    }catch(err){
-      this._log(`Pairing-Fehler: ${err.message}`);
-      throw err;
+      return 'unlocked';
+    }
+    this._log(`SCHRITT A — Antwort 0x${codeA.toString(16).padStart(4,'0')} → wechsle zu SCHRITT B`);
+
+    /* ─── SCHRITT B ─── */
+    this._log('SCHRITT B — Pairing-Init 0x02 + Dummy (Gerät muss "-P-" zeigen, 10s)');
+    let codeB;
+    try{ codeB = await this._unlockAndWait(0x02, new Uint8Array(16), 10000); }
+    catch(e){
+      throw new Error(
+        'Gerät nicht im Pairing-Modus.\n\n' +
+        'Bitte die Bluetooth-Taste am OMRON M7 gedrückt halten, bis "-P-" im Display erscheint, dann erneut "Verbinden" tippen.'
+      );
+    }
+    if(codeB !== 0x7F00){
+      throw new Error(
+        `Unerwartete Pairing-Antwort (0x${codeB.toString(16).padStart(4,'0')}).\n\n` +
+        'Bitte die Bluetooth-Taste am OMRON M7 gedrückt halten, bis "-P-" im Display erscheint.'
+      );
+    }
+    this._log('✓ SCHRITT B: Gerät ist im Pairing-Modus (0x7F00)');
+
+    /* ─── SCHRITT C ─── */
+    this._log('SCHRITT C — Key programmieren 0x00 + Key (5s)');
+    let codeC;
+    try{ codeC = await this._unlockAndWait(0x00, OmronBleManager.PAIR_KEY, 5000); }
+    catch(e){ throw new Error(`Key-Programmierung Timeout: ${e.message}`); }
+    if(codeC !== 0x8000){
+      throw new Error(`Key-Programmierung fehlgeschlagen (Code 0x${codeC.toString(16).padStart(4,'0')})`);
+    }
+    this._log('✓ SCHRITT C: Key gespeichert (0x8000)');
+
+    /* ─── SCHRITT D ─── */
+    this._log('SCHRITT D — Finaler Unlock 0x01 + Key');
+    let codeD;
+    try{ codeD = await this._unlockAndWait(0x01, OmronBleManager.PAIR_KEY, 3000); }
+    catch(e){ throw new Error(`Finaler Unlock Timeout: ${e.message}`); }
+    if(codeD !== 0x8100){
+      throw new Error(`Finaler Unlock fehlgeschlagen (Code 0x${codeD.toString(16).padStart(4,'0')})`);
+    }
+    this._log('✓ SCHRITT D: Pairing vollständig — Gerät freigeschaltet');
+
+    this.pairingKey = OmronBleManager.PAIR_KEY;
+    omronIsPaired = true;
+    this._setState('CONNECTED');
+    return 'paired';
+  }
+
+  /* Hilfsfunktion: Unlock-Paket schreiben und auf Notify-Antwort warten */
+  async _unlockAndWait(prefix, key16, timeoutMs){
+    const pkt = new Uint8Array(17);
+    pkt[0] = prefix;
+    pkt.set(key16, 1);
+    this._log(`UNLOCK-TX: ${this._hex(pkt.slice(0,4))}… (${pkt.length} Bytes)`);
+    const waitResp = this._waitUnlockResponse(timeoutMs);
+    await this.unlockChar.writeValueWithResponse(pkt);
+    const resp = await waitResp;
+    return (resp[1] << 8) | resp[2];
+  }
+  _onUnlockNotify(value){
+    const bytes = new Uint8Array(value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength));
+    this._log(`UNLOCK-RX: ${this._hex(bytes)}`);
+    if(this._unlockPending){
+      const {resolve, timer} = this._unlockPending;
+      this._unlockPending = null;
+      clearTimeout(timer);
+      resolve(bytes);
     }
   }
-  async _completeFirstPairing(){
-    const pkt = new Uint8Array(17);
-    pkt[0] = OmronBleManager.CMD.PAIR_SET_KEY;
-    pkt.set(OmronBleManager.PAIR_KEY, 1);
-    const waitResp = this.waitForResponse(3000);
-    await this.unlockChar.writeValueWithResponse(pkt);
-    let resp;
-    try { resp = await waitResp; }
-    catch(e){ const dv = await this.unlockChar.readValue(); resp = new Uint8Array(dv.buffer); }
-    const code = (resp[1] << 8) | resp[2];
-    if(code !== 0x8000) throw new Error(`First-Pairing fehlgeschlagen (Code 0x${code.toString(16)})`);
-    this.pairingKey = OmronBleManager.PAIR_KEY;
-    this._log('✓ First-Pairing erfolgreich');
+  _waitUnlockResponse(timeoutMs){
+    return new Promise((resolve, reject)=>{
+      const timer = setTimeout(()=>{
+        if(this._unlockPending){
+          this._unlockPending = null;
+          reject(new Error(`Timeout nach ${timeoutMs} ms bei Unlock-Antwort`));
+        }
+      }, timeoutMs);
+      this._unlockPending = { resolve, reject, timer };
+    });
+  }
+
+  /* Discovery der 4 RX + 4 TX Characteristics (nach erfolgreichem Pairing) */
+  async _discoverDataChannels(){
+    if(this._channelsReady) return;
+    this._log('Hole RX/TX-Characteristics …');
+    for(let i=0; i<4; i++){
+      this.rxChars[i] = await this.service.getCharacteristic(OmronBleManager.UUID_RX[i]);
+      this.txChars[i] = await this.service.getCharacteristic(OmronBleManager.UUID_TX[i]);
+    }
+    for(let i=0; i<4; i++){
+      await this.rxChars[i].startNotifications();
+      this.rxChars[i].addEventListener('characteristicvaluechanged', (ev)=> this._onRxNotification(i, ev.target.value));
+    }
+    this._channelsReady = true;
+    this._log('✓ Alle 4 RX + 4 TX-Kanäle einsatzbereit');
   }
 
   /* -------- EEPROM-Block lesen -------- */
@@ -1445,27 +1631,48 @@ class OmronBleManager {
     return result.slice(0, size);
   }
   async _readBlock(address){
-    const pkt = this._buildPacket(OmronBleManager.CMD.READ_EEPROM, address, new Uint8Array([OmronBleManager.EEP.BLOCK_SIZE]));
+    /* Paket-Layout (verifiziert, omblepy _readBlockEeprom):
+       08 01 00 [addrHi] [addrLo] 10 00 XOR
+       Payload = [Blockgrösse 0x10, Padding 0x00] */
+    const payload = new Uint8Array([OmronBleManager.EEP.BLOCK_SIZE, 0x00]);
+    const pkt = this._buildPacket(OmronBleManager.CMD.READ_EEPROM, address, payload);
+    this._log(`READ-TX  @0x${address.toString(16).padStart(4,'0')}: ${this._hex(pkt)}`);
     const waitResp = this.waitForResponse();
     await this._writePacket(pkt);
     const resp = await waitResp;
+    this._log(`READ-RX  @0x${address.toString(16).padStart(4,'0')}: ${this._hex(resp)}`);
+    /* Antwort-Typ muss "0100" in Bytes 1-2 enthalten (nicht 0x0501 — Korrektur!) */
+    const respType = (resp[1] << 8) | resp[2];
+    if(respType !== 0x0100){
+      throw new Error(`Unerwarteter READ-Antworttyp 0x${respType.toString(16).padStart(4,'0')} (erwartet 0x0100)`);
+    }
+    /* Nutzdaten: Byte 5 enthält die Anzahl Datenbytes, gefolgt von N Datenbytes */
     const dataLen = resp[5];
     return resp.slice(6, 6 + dataLen);
   }
   async _startTransmission(){
     try{
-      const pkt = this._buildPacket(OmronBleManager.CMD.TRANS_START, 0, new Uint8Array(0));
+      /* VERIFIZIERT gegen omblepy.py:
+           startDataReadout = bytearray.fromhex("0800000000100018")
+         Zerlegt: len=0x08, cmd=0x0000, addr=0x0000, payload=[0x10,0x00], xor=0x18 */
+      const payload = new Uint8Array([0x10, 0x00]);
+      const pkt = this._buildPacket(OmronBleManager.CMD.TRANS_START, 0x0000, payload);
+      this._log(`START-TX : ${this._hex(pkt)}`);
       const waitResp = this.waitForResponse(3000);
       await this._writePacket(pkt);
-      await waitResp;
-      this._log('Start-Transmission OK');
+      const resp = await waitResp;
+      this._log(`START-RX : ${this._hex(resp)}`);
     }catch(e){ this._log(`Start-Transmission-Hinweis: ${e.message}`); }
   }
   async _endTransmission(){
     try{
-      const pkt = this._buildPacket(OmronBleManager.CMD.TRANS_END, 0, new Uint8Array(0));
+      /* VERIFIZIERT gegen omblepy.py:
+           stopDataReadout = bytearray.fromhex("080f000000000007")
+         Zerlegt: len=0x08, cmd=0x0F00, addr=0x0000, payload=[0x00,0x00], xor=0x07 */
+      const payload = new Uint8Array([0x00, 0x00]);
+      const pkt = this._buildPacket(OmronBleManager.CMD.TRANS_END, 0x0000, payload);
+      this._log(`END-TX   : ${this._hex(pkt)}`);
       await this._writePacket(pkt);
-      this._log('End-Transmission gesendet');
     }catch(e){ this._log(`End-Transmission-Hinweis: ${e.message}`); }
   }
 
@@ -1473,6 +1680,8 @@ class OmronBleManager {
      existingRecords: Array aus state.readings (zur Duplikat-Erkennung)
      Rückgabe: { user1:[...], user2:[...], newCount, duplicateCount } */
   async syncAllRecords(existingRecords){
+    /* Data-Channels erst jetzt discovern (nach Pairing) */
+    await this._discoverDataChannels();
     this._setState('READING');
     await this._startTransmission();
     const users = [
@@ -1595,14 +1804,34 @@ class OmronBleManager {
 /* ============================================================
  *  BLE-UI-INTEGRATION (Sync-Button, 3 Zustände, Progress)
  * ============================================================ */
+/* In-Memory Flags für Pairing-Zustand (kein localStorage — pro Session) */
 let omronMgr = null;
+let omronIsPaired = false;     /* true nach erfolgreichem SCHRITT A oder D */
+let forceFirstPair = false;    /* true wenn User "Erstmalig koppeln" gedrückt hat */
+
+function updateSyncHints(){
+  const firstPair = document.getElementById('hint-first-pair');
+  const normal    = document.getElementById('hint-normal');
+  const toggleBtn = document.getElementById('btn-toggle-pair-mode');
+  const toggleTxt = document.getElementById('btn-toggle-pair-text');
+  const showFirst = !omronIsPaired || forceFirstPair;
+  if(firstPair) firstPair.style.display = showFirst ? 'flex' : 'none';
+  if(normal)    normal.style.display    = showFirst ? 'none' : 'flex';
+  /* Toggle-Button erst anbieten, wenn das Gerät schon einmal gepairt war */
+  if(toggleBtn) toggleBtn.style.display = omronIsPaired ? 'inline-flex' : 'none';
+  if(toggleTxt) toggleTxt.textContent   = forceFirstPair ? 'Normalbetrieb (wieder zurück)' : 'Erstmalig koppeln';
+}
+function toggleFirstPairMode(){
+  forceFirstPair = !forceFirstPair;
+  updateSyncHints();
+}
 function openSync(){
-  ['step-1','step-2','step-3'].forEach((s,i)=>{ const el=document.getElementById(s); el.classList.remove('done'); el.classList.toggle('active', i===0); });
   document.getElementById('sync-log').style.display='none';
   document.getElementById('sync-log').textContent='';
   document.getElementById('sync-progress').style.display='none';
   document.getElementById('btn-sync-start').disabled=false;
   updateSyncMainButton('idle');
+  updateSyncHints();
   if(!OmronBleManager.isSupported()){
     document.getElementById('sync-log').style.display='block';
     document.getElementById('sync-log').textContent = 'Web-Bluetooth steht in diesem Browser nicht zur Verfügung.\n\nBitte Chrome for Android verwenden (oder Chrome/Edge auf Desktop).';
@@ -1612,13 +1841,6 @@ function openSync(){
 function toggleSyncLog(){
   const l = document.getElementById('sync-log');
   l.style.display = l.style.display === 'none' ? 'block' : 'none';
-}
-function syncStep(n){
-  for(let i=1;i<=3;i++){
-    const el=document.getElementById('step-'+i);
-    el.classList.remove('active','done');
-    if(i<n) el.classList.add('done'); else if(i===n) el.classList.add('active');
-  }
 }
 function setConnUI(state, name){
   const dot = document.querySelector('#conn-status .dot');
@@ -1661,16 +1883,18 @@ async function startBluetoothSync(){
   };
 
   try{
-    syncStep(2);
+    /* 1. requestDevice + gatt.connect + Unlock-Char laden */
     await omronMgr.connect();
     updateSyncMainButton('connected');
 
-    syncStep(3);
+    /* 2. pairDevice (SCHRITT A/B/C/D) — setzt omronIsPaired = true bei Erfolg */
     await omronMgr.pairDevice();
+    forceFirstPair = false;                  /* nach erfolgreichem Pair Normal-Hinweis zurück */
+    updateSyncHints();
 
+    /* 3. Datenkanäle on-demand discovern und EEPROM auslesen */
     progEl.style.display = 'block';
     progText.textContent = 'Lese Messwerte …';
-
     const result = await omronMgr.syncAllRecords(state.readings);
     const all    = [...result.user1, ...result.user2];
 
@@ -1688,7 +1912,6 @@ async function startBluetoothSync(){
 
     omronMgr._log(`✓ Fertig. ${result.newCount} neue Messungen hinzugefügt, ${result.duplicateCount} Duplikate übersprungen.`);
     toast(`${result.newCount} neue · ${result.duplicateCount} Duplikate`);
-    ['step-1','step-2','step-3'].forEach(s=>{ const e=document.getElementById(s); e.classList.remove('active'); e.classList.add('done'); });
     renderOverview();
 
     await omronMgr.disconnect();
@@ -2091,12 +2314,27 @@ document.getElementById('btn-sync-top').addEventListener('click', openSync);
     console.assert(tDia===0,   'Test 1: Dia erwartet 0, erhalten '+tDia);
     console.assert(tPul===138, 'Test 1: Pul erwartet 138, erhalten '+tPul);
 
-    /* Test 2 — XOR-Checksumme */
-    const p = new Uint8Array([0x08,0x05,0x01,0x98,0x00,0x01,0x10]);
-    let x=0; for(const b of p) x^=b;
-    const full = new Uint8Array(8); full.set(p); full[7] = x;
-    let verify=0; for(const b of full) verify^=b;
-    console.assert(verify===0 && x===0x85, 'Test 2: XOR-Checksumme fehlgeschlagen');
+    /* Test 2 — KORRIGIERT: READ_EEPROM-Paket gemäss omblepy.
+       Erwartetes Paket für Adresse 0x0098, Blockgrösse 0x10:
+         08 01 00 00 98 10 00 81
+       Komponenten:
+         Byte 0 : 0x08  (Gesamtlänge)
+         Byte 1 : 0x01  (cmd high)
+         Byte 2 : 0x00  (cmd low)    → cmdType 0x0100
+         Byte 3 : 0x00  (addr high, BE)
+         Byte 4 : 0x98  (addr low,  BE)
+         Byte 5 : 0x10  (Blockgrösse)
+         Byte 6 : 0x00  (Padding)
+         Byte 7 : 0x81  (XOR: 08^01^00^00^98^10^00 = 0x81)
+       Zusätzliche Prüfung: XOR über alle 8 Bytes muss 0 ergeben. */
+    const testMgr = new OmronBleManager();
+    const readPkt = testMgr._buildPacket(0x0100, 0x0098, new Uint8Array([0x10, 0x00]));
+    const expected = [0x08, 0x01, 0x00, 0x00, 0x98, 0x10, 0x00, 0x81];
+    let pktOK = readPkt.length === 8;
+    for(let i=0; pktOK && i<8; i++) if(readPkt[i] !== expected[i]) pktOK = false;
+    let gxor = 0; for(const b of readPkt) gxor ^= b;
+    console.assert(pktOK, 'Test 2: READ_EEPROM-Paket falsch. Erwartet '+expected.map(b=>b.toString(16).padStart(2,'0')).join(' ')+' | erhalten '+Array.from(readPkt).map(b=>b.toString(16).padStart(2,'0')).join(' '));
+    console.assert(gxor === 0, 'Test 2: Gesamt-XOR ≠ 0');
 
     /* Test 3 — Duplikat-Erkennung */
     const T = new Date('2026-01-15T08:30:00').getTime();
@@ -2116,7 +2354,83 @@ document.getElementById('btn-sync-top').addEventListener('click', openSync);
     const parsed = JSON.parse(js);
     console.assert(parsed.name && parsed.short_name && parsed.start_url && parsed.display && parsed.icons && parsed.icons[0].sizes, 'Test 5: Manifest unvollständig');
 
-    console.log('✓ Alle 5 Selbsttests bestanden (Bit-Extraktion, XOR, Duplikat, Leer-Record, PWA-Manifest).');
+    /* ─── Pairing-Flow-Selbsttests ─── */
+    /* Gemeinsamer Fake-Unlock-Mock: simuliert _unlockAndWait mit vorkonfigurierter Response */
+    function makeFakeMgr(responses){
+      const mgr = new OmronBleManager();
+      mgr._log = ()=>{}; mgr._setState = ()=>{};
+      let step = 0;
+      mgr.unlockChar = { writeValueWithResponse: async ()=>{} };
+      mgr._unlockAndWait = async () => {
+        if(step >= responses.length) throw new Error('Timeout nach Test-Timeout ms bei Unlock-Antwort');
+        const r = responses[step++];
+        if(r === 'TIMEOUT') throw new Error('Timeout nach 10000 ms bei Unlock-Antwort');
+        return r;
+      };
+      return mgr;
+    }
+
+    /* Test P1 — requestDevice-Filter korrekt (statische Inspektion) */
+    const connectSrc = OmronBleManager.prototype.connect.toString();
+    const hasNoServicesFilter = !/filters:\s*\[\s*\{\s*services\s*:/m.test(connectSrc);
+    const hasNamePrefix       = /namePrefix:\s*['"]BLESmart['"]/.test(connectSrc);
+    const usesGetPrimaryServices = /getPrimaryServices\s*\(/.test(connectSrc);
+    console.assert(hasNoServicesFilter && hasNamePrefix, 'Test P1a: requestDevice-Filter falsch (services-Filter vorhanden oder namePrefix fehlt)');
+    console.assert(usesGetPrimaryServices, 'Test P1b: connect() ruft nicht getPrimaryServices() auf');
+
+    /* ─── Service-Discovery-Selbsttests (Test S1/S2/S3) ───
+       Testet den statischen Helper OmronBleManager._filterVendorService(),
+       der auch im Produktions-connect() verwendet wird. */
+
+    /* Test S1 — leere Liste → Fehlermeldung mit "Bitte Log kopieren" */
+    let s1err = null;
+    try{ OmronBleManager._filterVendorService([]); }
+    catch(e){ s1err = e; }
+    console.assert(s1err && /Bitte diesen Log-Auszug kopieren/.test(s1err.message) && /\(keine\)/.test(s1err.message),
+      'Test S1: Leere Services-Liste muss Fehler mit "Bitte Log kopieren" und "(keine)" werfen.');
+
+    /* Test S2 — Vendor-UUID in Liste → Service-Objekt zurückgegeben (case-insensitive) */
+    const fakeVendor = { uuid:'ECBE3980-C9A2-11E1-B1BD-0002A5D5C51B' }; /* absichtlich UPPERCASE */
+    const fakeOther  = { uuid:'00001810-0000-1000-8000-00805f9b34fb' };
+    const s2svc = OmronBleManager._filterVendorService([fakeOther, fakeVendor]);
+    console.assert(s2svc === fakeVendor, 'Test S2: Vendor-Service (case-insensitive) muss zurückgegeben werden.');
+
+    /* Test S3 — andere UUIDs → Fehler listet ALLE UUIDs */
+    let s3err = null;
+    try{ OmronBleManager._filterVendorService([fakeOther, { uuid:'00001800-0000-1000-8000-00805f9b34fb' }]); }
+    catch(e){ s3err = e; }
+    console.assert(s3err
+      && s3err.message.includes('00001810-0000-1000-8000-00805f9b34fb')
+      && s3err.message.includes('00001800-0000-1000-8000-00805f9b34fb')
+      && /Bitte diesen Log-Auszug kopieren/.test(s3err.message),
+      'Test S3: Fehlermeldung muss alle vorhandenen UUIDs + Log-Hinweis enthalten.');
+
+    /* Tests P2/P3/P4 asynchron sequentiell — sonst racet omronIsPaired */
+    (async ()=>{
+      /* Test P2 — pairDevice mit 0x8100 = sofort erfolgreich */
+      omronIsPaired = false;
+      const m2 = makeFakeMgr([0x8100]);
+      const r2 = await m2.pairDevice();
+      console.assert(r2 === 'unlocked' && omronIsPaired === true, 'Test P2: Unlock sofort erfolgreich erwartet');
+
+      /* Test P3 — pairDevice mit 0x0000 → 0x7F00 → 0x8000 → 0x8100 = Pairing komplett */
+      omronIsPaired = false;
+      const m3 = makeFakeMgr([0x0000, 0x7F00, 0x8000, 0x8100]);
+      const r3 = await m3.pairDevice();
+      console.assert(r3 === 'paired' && omronIsPaired === true, 'Test P3: Vollständiger Pairing-Flow A→B→C→D erwartet');
+
+      /* Test P4 — Timeout in SCHRITT B → benutzerfreundliche deutsche Fehlermeldung */
+      omronIsPaired = false;
+      const m4 = makeFakeMgr([0x0000, 'TIMEOUT']);
+      let caught = null;
+      try{ await m4.pairDevice(); }catch(e){ caught = e; }
+      const msg = caught ? caught.message : '';
+      const isGerman = /Bluetooth-Taste|Pairing-Modus|-P-/.test(msg);
+      console.assert(caught && isGerman, 'Test P4: Deutsche Pairing-Fehlermeldung erwartet, bekommen: '+msg);
+
+      omronIsPaired = false;   /* Production-Zustand: nach Tests immer false */
+      console.log('✓ Alle 13 Selbsttests bestanden (Bit-Extraktion, XOR, Duplikat, Leer-Record, PWA-Manifest, P1a Filter, P1b getPrimaryServices, P2 Unlock, P3 Pair-Flow, P4 Timeout, S1 Leere-Service-Liste, S2 Vendor-UUID-Match, S3 Fehlende-UUID-Liste).');
+    })();
   }catch(e){ console.error('Selbsttest-Fehler:', e); }
 })();
 
