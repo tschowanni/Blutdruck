@@ -753,25 +753,25 @@
         <div><b>Wichtig: OMRON Connect App schließen</b>Das Gerät erlaubt nur <b>eine Verbindung gleichzeitig</b>. Läuft die OMRON Connect App im Hintergrund, blockiert sie diese App.</div>
       </div>
 
-      <!-- HINWEIS ERSTMALIGES KOPPELN (Pairing-Modus, Default beim ersten Öffnen) -->
+      <!-- HINWEIS ERSTMALIGES KOPPELN (Pairing-Modus "-P-") -->
       <div class="alert-banner info" id="hint-first-pair" style="margin-bottom:10px">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
         <div>
-          <b>Erstmaliges Koppeln &middot; Pairing-Modus</b>
-          <div style="margin-top:4px">1. Bluetooth-Taste am OMRON M7 <b>3-5 Sekunden gedrückt halten</b><br>&nbsp;&nbsp;&nbsp;&nbsp;→ Display zeigt blinkendes „<b>-P-</b>" (Pairing-Modus)</div>
+          <b>Erstmaliges Koppeln</b>
+          <div style="margin-top:4px">1. Bluetooth-Taste am OMRON M7 <b>3-5 Sekunden gedrückt halten</b><br>&nbsp;&nbsp;&nbsp;&nbsp;→ Display zeigt blinkendes „<b>-P-</b>"</div>
           <div>2. Dann auf „<b>Verbinden</b>" tippen</div>
-          <div style="margin-top:6px;opacity:.85">Nach erfolgreichem Koppeln wird für die tägliche Synchronisation der Transfer-Modus verwendet (ein kurzer Tastendruck).</div>
+          <div style="margin-top:6px;opacity:.85">Kurzer Druck (Datum blinkt) reicht nicht — der Daten-Service ist nur im „-P-"-Modus sichtbar. Bei sehr langem Druck (7+ Sek.) schaltet das Gerät aus.</div>
         </div>
       </div>
 
-      <!-- HINWEIS NORMALBETRIEB (Transfer-Modus, nach erfolgreichem Pairing sichtbar) -->
+      <!-- HINWEIS NORMALBETRIEB (nach erfolgreichem Pairing — weiterhin "-P-" nötig) -->
       <div class="alert-banner info" id="hint-normal" style="margin-bottom:10px;display:none">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
         <div>
-          <b>So synchronisieren Sie &middot; Transfer-Modus</b>
-          <div style="margin-top:4px">1. Bluetooth-Taste am OMRON M7 <b>einmal kurz drücken</b><br>&nbsp;&nbsp;&nbsp;&nbsp;→ Display zeigt blinkendes „<b>O</b>" (Transfer-Modus)</div>
-          <div>2. Sofort danach auf „<b>Verbinden</b>" tippen (innerhalb ~5 Sekunden)</div>
-          <div style="margin-top:6px;opacity:.85">Das „O"-Zeichen signalisiert: Daten-Service ist für ca. 3 Minuten sichtbar.</div>
+          <b>So synchronisierst du</b>
+          <div style="margin-top:4px">1. Bluetooth-Taste am OMRON M7 <b>3-5 Sekunden gedrückt halten</b><br>&nbsp;&nbsp;&nbsp;&nbsp;→ Display zeigt blinkendes „<b>-P-</b>"</div>
+          <div>2. Sofort danach auf „<b>Verbinden</b>" tippen</div>
+          <div style="margin-top:6px;opacity:.85">Auch im Normalbetrieb benötigt das Gerät den „-P-"-Modus, damit der Daten-Service sichtbar wird. Ein kurzer Druck (Datum blinkt) reicht nicht.</div>
         </div>
       </div>
 
@@ -1396,15 +1396,15 @@ class OmronBleManager {
     const onlyStandard = list.length > 0 && list.every(s => SIG.test(String(s.uuid)));
     if(onlyStandard){
       throw new Error(
-        'OMRON-Transfer-Modus nicht aktiv.\n\n' +
-        'Das Gerät ist im Standby — der Daten-Service ist nicht sichtbar.\n' +
-        'Es werden nur Standard-Bluetooth-Services gemeldet:\n  · ' + uuidStr + '\n\n' +
-        'Bitte so vorgehen:\n' +
-        '1. Bluetooth-Taste am OMRON M7 EINMAL KURZ drücken\n' +
-        '   → Display zeigt blinkendes "O"\n' +
-        '2. SOFORT danach (innert 5 Sekunden) auf "Verbinden" tippen\n\n' +
-        'Hinweis: Für erstmaliges Koppeln stattdessen die Taste\n' +
-        '3-5 Sekunden gedrückt halten bis "-P-" blinkt.'
+        'OMRON-Daten-Service nicht sichtbar.\n\n' +
+        'Das Gerät meldet nur Standard-Bluetooth-Services:\n  · ' + uuidStr + '\n\n' +
+        'So aktivierst du den Daten-Modus:\n' +
+        '1. Bluetooth-Taste am OMRON M7 3-5 Sekunden gedrückt halten\n' +
+        '   → Display zeigt blinkendes "-P-"\n' +
+        '2. Sofort danach auf "Verbinden" tippen\n\n' +
+        'Wichtig: Ein kurzer Tastendruck (Datum blinkt) reicht NICHT —\n' +
+        'der Daten-Service wird nur im "-P-"-Modus exponiert.\n' +
+        'Bei sehr langem Druck (7+ Sek.) schaltet das Gerät aus.'
       );
     }
     throw new Error(
@@ -2573,7 +2573,7 @@ document.getElementById('btn-sync-top').addEventListener('click', openSync);
       && s3err.message.includes('00001800-0000-1000-8000-00805f9b34fb'),
       'Test S3: Fehlermeldung muss alle vorhandenen UUIDs enthalten.');
 
-    /* Test S4 — NUR Standard-Services → Transfer-Modus-Diagnose */
+    /* Test S4 — NUR Standard-Services → "-P-"-Modus-Diagnose */
     let s4err = null;
     try{ OmronBleManager._filterVendorService([
       { uuid:'00001800-0000-1000-8000-00805f9b34fb' },
@@ -2582,10 +2582,10 @@ document.getElementById('btn-sync-top').addEventListener('click', openSync);
     ]); }
     catch(e){ s4err = e; }
     console.assert(s4err
-      && /Transfer-Modus nicht aktiv/i.test(s4err.message)
-      && /EINMAL KURZ drücken/.test(s4err.message)
-      && /"O"/.test(s4err.message),
-      'Test S4: Diagnose-Message muss Transfer-Modus erklären (EINMAL KURZ drücken, "O").');
+      && /Daten-Service nicht sichtbar/i.test(s4err.message)
+      && /3-5 Sekunden gedrückt halten/.test(s4err.message)
+      && /"-P-"/.test(s4err.message),
+      'Test S4: Diagnose-Message muss "-P-"-Modus erklären (3-5 Sekunden gedrückt halten).');
 
     /* Test S5 — Alt-Vendor-UUID ecbe3982 wird ebenfalls akzeptiert */
     const altVendor = { uuid:'ecbe3982-c9a2-11e1-b1bd-0002a5d5c51b' };
@@ -2597,14 +2597,13 @@ document.getElementById('btn-sync-top').addEventListener('click', openSync);
     const gpsCount = (connectBody.match(/getPrimaryServices\s*\(/g) || []).length;
     console.assert(gpsCount === 1, 'Test S6: getPrimaryServices() darf nur einmal (kein Retry) aufgerufen werden, Count='+gpsCount);
 
-    /* Test S7 — hint-normal enthält Transfer-Modus-Anleitung */
+    /* Test S7 — hint-normal enthält "-P-"-Modus-Anleitung */
     const hintNormal = document.getElementById('hint-normal');
     const normalText = hintNormal ? hintNormal.textContent : '';
     console.assert(
-      /einmal kurz drücken/i.test(normalText) &&
-      /Transfer-Modus/.test(normalText) &&
-      /„O"|"O"/.test(normalText),
-      'Test S7: hint-normal muss Transfer-Modus-Anleitung enthalten (einmal kurz drücken, "O").'
+      /3-5 Sekunden gedrückt halten/i.test(normalText) &&
+      /„-P-"|"-P-"|-P-/.test(normalText),
+      'Test S7: hint-normal muss Anleitung für Pairing-Modus enthalten (3-5 Sekunden halten, "-P-").'
     );
 
     /* Test R1 — connect() enthält gatt.disconnect() VOR gatt.connect() */
