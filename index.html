@@ -1324,7 +1324,10 @@ function saveReading(){
  * ============================================================================================ */
 
 class OmronBleManager {
-  static UUID_SERVICE = 'ecbe3980-c9a2-11e1-b1bd-0002a5d5c51b';
+  /* Primärer Vendor-Service: bei neueren OMRON-Firmware-Ständen ist dies die
+     SIG-registrierte Omron-Healthcare-UUID 0xFE4A. Ältere Firmware nutzt die
+     herstellerinterne ecbe3980-… — siehe VENDOR_UUIDS für beide Varianten. */
+  static UUID_SERVICE = '0000fe4a-0000-1000-8000-00805f9b34fb';
   static UUID_RX = [
     '49123040-aee8-11e1-a74d-0002a5d5c51b',
     '4d0bf320-aee8-11e1-a0d9-0002a5d5c51b',
@@ -1361,6 +1364,7 @@ class OmronBleManager {
     this._pending = null;
     this._unlockPending = null;              /* separater Kanal für Unlock-Char-Notifies */
     this._channelsReady = false;             /* RX/TX-Characteristics erst nach Pairing */
+    this._singleChannelMode = false;         /* true wenn nur CH0 (neue OMRON-FW) */
     this._disconnectHandler = ()=>this._onDisconnect();
     this.onLog = null; this.onProgress = null; this.onState = null;
   }
@@ -1371,10 +1375,12 @@ class OmronBleManager {
 
   static isSupported(){ return typeof navigator !== 'undefined' && !!navigator.bluetooth; }
 
-  /* Unterstützte Vendor-Service-UUIDs (verschiedene Firmware-Varianten) */
+  /* Unterstützte Vendor-Service-UUIDs (verschiedene Firmware-Varianten)
+     Reihenfolge = Priorität bei der Auswahl aus der Service-Liste. */
   static VENDOR_UUIDS = [
-    'ecbe3980-c9a2-11e1-b1bd-0002a5d5c51b', /* Standard HEM-7361T      */
-    'ecbe3982-c9a2-11e1-b1bd-0002a5d5c51b'  /* Alt-Variante manche FW  */
+    '0000fe4a-0000-1000-8000-00805f9b34fb', /* Neuere OMRON-FW (SIG-registriert) */
+    'ecbe3980-c9a2-11e1-b1bd-0002a5d5c51b', /* Legacy omblepy HEM-7361T          */
+    'ecbe3982-c9a2-11e1-b1bd-0002a5d5c51b'  /* Legacy Alt-Variante                */
   ];
 
   /* Hilfsfunktion: filtert den Vendor-Service aus der GATT-Service-Discovery.
@@ -1442,9 +1448,19 @@ class OmronBleManager {
     return p;
   }
   async _writePacket(packet){
+    /* Single-Channel-Modus: komplettes Paket ungepaddet auf TX CH0 senden */
+    if(this._singleChannelMode){
+      try{
+        await this.txChars[0].writeValueWithResponse(packet);
+        this._log(`TX → ${this._hex(packet)}`);
+      }catch(e){ throw new Error(`TX-Schreibfehler: ${e.message}`); }
+      return;
+    }
+    /* Multi-Channel-Modus (Legacy): in 16-Byte-Chunks auf CH0..CH3 verteilen */
     const chunks = [ packet.slice(0,16), packet.slice(16,32), packet.slice(32,48), packet.slice(48,64) ];
     for(let i=0; i<4; i++){
       if(chunks[i].length === 0) continue;
+      if(!this.txChars[i]){ this._log(`TX${i} nicht verfügbar — übersprungen`); continue; }
       const padded = new Uint8Array(16);
       padded.set(chunks[i]);
       try{
@@ -1456,6 +1472,26 @@ class OmronBleManager {
 
   _onRxNotification(channelIdx, value){
     const bytes = new Uint8Array(value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength));
+    /* Single-Channel-Modus: jede Notification ist ein komplettes Paket */
+    if(this._singleChannelMode){
+      this._log(`RX ← ${this._hex(bytes)}`);
+      const totalLen = bytes[0];
+      if(!totalLen || totalLen > bytes.length){
+        this._log(`RX: unplausible Länge (${totalLen}, empfangen ${bytes.length})`);
+        return;
+      }
+      const packet = bytes.slice(0, totalLen);
+      let x = 0; for(const b of packet) x ^= b;
+      if(x !== 0){
+        this._log(`XOR-Fehler 0x${x.toString(16)}, Paket verworfen`);
+        if(this._pending){ const {reject,timer} = this._pending; this._pending = null; clearTimeout(timer); reject(new Error('Checksummenfehler im Empfangspaket')); }
+        return;
+      }
+      if(this._pending){ const {resolve,timer} = this._pending; this._pending = null; clearTimeout(timer); resolve(packet); }
+      else this._log(`Paket ohne Wartenden: ${this._hex(packet)}`);
+      return;
+    }
+    /* Multi-Channel-Modus: Chunks sammeln und via _tryAssemble zusammenfügen */
     this._rxBuffers[channelIdx] = bytes;
     this._log(`RX${channelIdx} ← ${this._hex(bytes)}`);
     this._tryAssemble();
@@ -1514,12 +1550,13 @@ class OmronBleManager {
           { namePrefix:'OMRON'    }
         ],
         optionalServices:[
-          'ecbe3980-c9a2-11e1-b1bd-0002a5d5c51b',  /* Vendor-Hauptservice        */
-          'ecbe3982-c9a2-11e1-b1bd-0002a5d5c51b',  /* Vendor alt (ältere FW)     */
-          '00001800-0000-1000-8000-00805f9b34fb',  /* Generic Access             */
-          '00001801-0000-1000-8000-00805f9b34fb',  /* Generic Attribute          */
-          '0000180a-0000-1000-8000-00805f9b34fb',  /* Device Information         */
-          '00001810-0000-1000-8000-00805f9b34fb'   /* Blood Pressure (Standard)  */
+          '0000fe4a-0000-1000-8000-00805f9b34fb',  /* OMRON SIG-registriert (neue FW) */
+          'ecbe3980-c9a2-11e1-b1bd-0002a5d5c51b',  /* OMRON Legacy-Service             */
+          'ecbe3982-c9a2-11e1-b1bd-0002a5d5c51b',  /* OMRON Legacy-Variante            */
+          '00001800-0000-1000-8000-00805f9b34fb',  /* Generic Access                   */
+          '00001801-0000-1000-8000-00805f9b34fb',  /* Generic Attribute                */
+          '0000180a-0000-1000-8000-00805f9b34fb',  /* Device Information               */
+          '00001810-0000-1000-8000-00805f9b34fb'   /* Blood Pressure (Standard)        */
         ]
       });
       this._log(`Gerät: ${this.device.name || '(ohne Namen)'}`);
@@ -1559,12 +1596,12 @@ class OmronBleManager {
       this.server = server;
       this._log('GATT verbunden');
 
-      /* getPrimaryService(UUID) scheitert, wenn das Gerät diesen Service
+      /* Service-Discovery (Ausgangslage):
+         getPrimaryService(UUID) scheitert, wenn das Gerät diesen Service
          in der Discovery nicht zurückgibt — selbst wenn er in
          optionalServices steht (Web Bluetooth CG Issues #451 / #513).
-         Daher ALLE Services abrufen, loggen und selbst filtern.
-         KEIN Retry: der Vendor-Service wird nur im aktiven Transfer-
-         oder Pairing-Modus exponiert — Warten hilft nicht. */
+         Daher ALLE Services abrufen, loggen und selbst filtern. */
+      const VENDOR_SET = new Set(OmronBleManager.VENDOR_UUIDS);
       let allServices = [];
       try{
         allServices = await this.server.getPrimaryServices();
@@ -1572,6 +1609,31 @@ class OmronBleManager {
         this._log(`getPrimaryServices-Fehler: ${e.message}`);
         throw new Error(`Service-Discovery fehlgeschlagen (${e.message}).\nBitte Log kopieren und melden.`);
       }
+      let hasVendor = allServices.some(s => VENDOR_SET.has(String(s.uuid).toLowerCase()));
+
+      /* Double-Connect-Workaround: Auf Android Chrome wird die GATT-
+         Service-Liste beim ERSTEN Connect gecached — oft bevor das
+         OS-Bonding abgeschlossen ist. Danach liefert getPrimaryServices
+         nur die Standard-Services (0000180a / 1801 / 1800), obwohl das
+         Gerät im "-P-"-Modus eigentlich den Vendor-Service exponiert.
+         Einmal sauber trennen, kurz warten, wieder connecten — dann
+         liefert Chrome die aktuelle (post-Bonding) Service-Liste. */
+      if(!hasVendor){
+        this._log('Vendor-Service im ersten Discovery-Durchgang nicht sichtbar — Double-Connect-Workaround läuft …');
+        try{ this.device.gatt.disconnect(); }catch(e){}
+        await new Promise(r => setTimeout(r, 1500));
+        this._log('Zweiter GATT-Verbindungsversuch (nach Cache-Reset) …');
+        try{
+          this.server = await this.device.gatt.connect();
+          this._log('GATT wieder verbunden');
+          allServices = await this.server.getPrimaryServices();
+          hasVendor = allServices.some(s => VENDOR_SET.has(String(s.uuid).toLowerCase()));
+          this._log(`Zweiter Discovery-Durchgang: ${allServices.length} Services${hasVendor ? ' (Vendor-Service jetzt sichtbar ✓)' : ' (Vendor-Service weiterhin fehlend)'}`);
+        }catch(e){
+          this._log(`Zweiter Connect/Discovery-Fehler: ${e.message}`);
+        }
+      }
+
       this._log(`Gefundene Services (${allServices.length}):`);
       allServices.forEach(s => this._log(`  · ${s.uuid}`));
       this.service = OmronBleManager._filterVendorService(allServices);
@@ -1727,20 +1789,37 @@ class OmronBleManager {
     });
   }
 
-  /* Discovery der 4 RX + 4 TX Characteristics (nach erfolgreichem Pairing) */
+  /* Discovery der Datenkanäle (nach erfolgreichem Pairing).
+     Manche OMRON-Firmware-Varianten bieten nur CH0 (Single-Channel-Modus),
+     andere alle 4. CH0 ist zwingend, CH1-3 sind optional. */
   async _discoverDataChannels(){
     if(this._channelsReady) return;
     this._log('Hole RX/TX-Characteristics …');
     for(let i=0; i<4; i++){
-      this.rxChars[i] = await this.service.getCharacteristic(OmronBleManager.UUID_RX[i]);
-      this.txChars[i] = await this.service.getCharacteristic(OmronBleManager.UUID_TX[i]);
+      try{
+        this.rxChars[i] = await this.service.getCharacteristic(OmronBleManager.UUID_RX[i]);
+      }catch(e){
+        this.rxChars[i] = null;
+        if(i === 0) throw new Error(`RX-Kanal 0 (${OmronBleManager.UUID_RX[0]}) nicht gefunden: ${e.message}`);
+      }
+      try{
+        this.txChars[i] = await this.service.getCharacteristic(OmronBleManager.UUID_TX[i]);
+      }catch(e){
+        this.txChars[i] = null;
+        if(i === 0) throw new Error(`TX-Kanal 0 (${OmronBleManager.UUID_TX[0]}) nicht gefunden: ${e.message}`);
+      }
     }
+    const rxCount = this.rxChars.filter(c => c).length;
+    const txCount = this.txChars.filter(c => c).length;
+    this._singleChannelMode = (rxCount === 1 && txCount === 1);
+    this._log(`Kanäle gefunden: ${txCount}× TX, ${rxCount}× RX${this._singleChannelMode ? ' (Single-Channel-Modus)' : ''}`);
     for(let i=0; i<4; i++){
+      if(!this.rxChars[i]) continue;
       await this.rxChars[i].startNotifications();
       this.rxChars[i].addEventListener('characteristicvaluechanged', (ev)=> this._onRxNotification(i, ev.target.value));
     }
     this._channelsReady = true;
-    this._log('✓ Alle 4 RX + 4 TX-Kanäle einsatzbereit');
+    this._log('✓ Datenkanäle einsatzbereit');
   }
 
   /* -------- EEPROM-Block lesen -------- */
@@ -1917,6 +1996,7 @@ class OmronBleManager {
     }catch(e){}
     this._rxBuffers = [null,null,null,null];
     if(this._pending){ const {reject,timer} = this._pending; this._pending = null; clearTimeout(timer); reject(new Error('Verbindung geschlossen')); }
+    if(this._unlockPending){ const {reject,timer} = this._unlockPending; this._unlockPending = null; clearTimeout(timer); reject(new Error('Verbindung geschlossen')); }
   }
   _onDisconnect(){
     this._log('Gerät-Disconnect-Event (externe Trennung)');
@@ -2592,10 +2672,13 @@ document.getElementById('btn-sync-top').addEventListener('click', openSync);
     const s5svc = OmronBleManager._filterVendorService([fakeOther, altVendor]);
     console.assert(s5svc === altVendor, 'Test S5: Alt-Variante ecbe3982-… muss als Vendor-Service erkannt werden.');
 
-    /* Test S6 — getPrimaryServices wird NICHT in einer Retry-Schleife aufgerufen */
+    /* Test S6 — getPrimaryServices in connect() genau zweimal:
+       1× initial + 1× im Double-Connect-Workaround. Keine Retry-SCHLEIFE. */
     const connectBody = OmronBleManager.prototype.connect.toString();
     const gpsCount = (connectBody.match(/getPrimaryServices\s*\(/g) || []).length;
-    console.assert(gpsCount === 1, 'Test S6: getPrimaryServices() darf nur einmal (kein Retry) aufgerufen werden, Count='+gpsCount);
+    const hasLoopAroundGps = /for\s*\([^)]*\)\s*\{[\s\S]{0,300}getPrimaryServices/.test(connectBody);
+    console.assert(gpsCount === 2 && !hasLoopAroundGps,
+      'Test S6: getPrimaryServices muss genau 2× (initial + Double-Connect) aufgerufen werden, ohne Schleife. Count='+gpsCount);
 
     /* Test S7 — hint-normal enthält "-P-"-Modus-Anleitung */
     const hintNormal = document.getElementById('hint-normal');
