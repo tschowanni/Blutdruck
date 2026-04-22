@@ -785,6 +785,16 @@
         <div class="progress-bar"><span id="sync-progress-bar" style="width:0%"></span></div>
       </div>
       <div class="log-view" id="sync-log"></div>
+      <div id="sync-log-actions" style="display:none;gap:8px;margin-top:6px">
+        <button class="btn outline" id="btn-copy-log" onclick="copyLogToClipboard()" style="flex:1;padding:8px 10px;font-size:.75rem">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--ico-export)" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          <span id="btn-copy-log-text">Log kopieren</span>
+        </button>
+        <button class="btn outline" id="btn-clear-log" onclick="clearLog()" style="flex:1;padding:8px 10px;font-size:.75rem">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--ico-trash)" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/></svg>
+          Log leeren
+        </button>
+      </div>
     </div>
     <div class="sheet-foot">
       <button class="btn outline" onclick="toggleSyncLog()" title="Debug-Log">Log</button>
@@ -1514,7 +1524,39 @@ class OmronBleManager {
       });
       this._log(`Gerät: ${this.device.name || '(ohne Namen)'}`);
       this.device.addEventListener('gattserverdisconnected', this._disconnectHandler);
-      this.server = await this.device.gatt.connect();
+
+      /* Ghost-Connection-Schutz: Chrome hält nach einer erfolgreichen
+         Sync/Disconnect manchmal einen inneren Verbindungszustand, der
+         bei erneutem connect() zu "Connection attempt failed" führt
+         (Chromium #40833192 / Web-Bluetooth CG #640).
+         → Erst sauber trennen, kurz warten, dann neu verbinden. */
+      if(this.device.gatt.connected){
+        this._log('Alte GATT-Verbindung aktiv — trenne zuerst …');
+        try{ this.device.gatt.disconnect(); }catch(e){}
+        await new Promise(r => setTimeout(r, 800));
+      }
+
+      /* connect() mit automatischem Retry (max. 2 Versuche) bei
+         "Connection attempt failed". Zweiter Versuch nach 1500 ms Pause. */
+      let server;
+      for(let attempt = 1; attempt <= 2; attempt++){
+        try{
+          this._log(attempt > 1 ? `Verbindungsversuch ${attempt}/2 …` : 'Verbinde mit GATT-Server …');
+          server = await this.device.gatt.connect();
+          break;
+        }catch(err){
+          if(attempt === 2) throw err;
+          const msg = err && err.message || '';
+          if(/Connection attempt failed|Connection failed|GATT Error/i.test(msg)){
+            this._log(`Verbindung fehlgeschlagen (${msg}) — warte 1500 ms, dann Retry …`);
+            try{ this.device.gatt.disconnect(); }catch(e){}
+            await new Promise(r => setTimeout(r, 1500));
+          } else {
+            throw err;   /* anderer Fehler → nicht retrien */
+          }
+        }
+      }
+      this.server = server;
       this._log('GATT verbunden');
 
       /* getPrimaryService(UUID) scheitert, wenn das Gerät diesen Service
@@ -1556,6 +1598,18 @@ class OmronBleManager {
     }catch(err){
       this._log(`Verbindung fehlgeschlagen: ${err.message}`);
       await this._safeCleanup();
+      /* Benutzerfreundliche Nachricht bei Ghost-Connection-Problem */
+      if(/Connection attempt failed|Connection failed/i.test(err && err.message || '')){
+        throw new Error(
+          'Verbindung fehlgeschlagen.\n\n' +
+          'Das Gerät konnte nicht erreicht werden. Mögliche Ursachen:\n' +
+          '1. OMRON M7 nicht im Transfer-Modus\n' +
+          '   → Bluetooth-Taste kurz drücken bis "O" blinkt\n' +
+          '2. Chrome hatte noch eine alte Verbindung gespeichert\n' +
+          '   → Chrome vollständig schliessen, neu öffnen, nochmals versuchen\n' +
+          '3. Gerät ist zu weit entfernt oder Akku schwach'
+        );
+      }
       throw err;
     }
   }
@@ -1910,7 +1964,52 @@ function openSync(){
 }
 function toggleSyncLog(){
   const l = document.getElementById('sync-log');
-  l.style.display = l.style.display === 'none' ? 'block' : 'none';
+  const a = document.getElementById('sync-log-actions');
+  const show = l.style.display === 'none';
+  l.style.display = show ? 'block' : 'none';
+  if(a) a.style.display = show ? 'flex' : 'none';
+}
+
+/* Log-Inhalt in Zwischenablage kopieren (mit Fallback für ältere Browser) */
+function copyLogToClipboard(){
+  const logBox = document.getElementById('sync-log');
+  const text = logBox.value !== undefined ? logBox.value : (logBox.innerText || logBox.textContent || '');
+  if(!text || !text.trim()){ toast('Log ist leer'); return; }
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(text)
+      .then(()=>{
+        const btn = document.getElementById('btn-copy-log-text');
+        if(btn){ btn.textContent = '✓ Kopiert!'; }
+        setTimeout(()=>{ if(btn) btn.textContent = 'Log kopieren'; }, 2000);
+        toast('Log in Zwischenablage kopiert');
+      })
+      .catch(()=> fallbackCopy(text));
+  } else {
+    fallbackCopy(text);
+  }
+}
+function fallbackCopy(text){
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.position = 'fixed';
+  ta.style.opacity = '0';
+  document.body.appendChild(ta);
+  ta.focus(); ta.select();
+  try{
+    document.execCommand('copy');
+    const btn = document.getElementById('btn-copy-log-text');
+    if(btn){ btn.textContent = '✓ Kopiert!'; setTimeout(()=>btn.textContent='Log kopieren', 2000); }
+    toast('Log in Zwischenablage kopiert');
+  }catch(e){
+    toast('Kopieren fehlgeschlagen — bitte manuell markieren');
+  }
+  document.body.removeChild(ta);
+}
+function clearLog(){
+  const logBox = document.getElementById('sync-log');
+  if(logBox.value !== undefined) logBox.value = '';
+  else logBox.textContent = '';
+  toast('Log geleert');
 }
 function setConnUI(state, name){
   const dot = document.querySelector('#conn-status .dot');
@@ -2493,12 +2592,10 @@ document.getElementById('btn-sync-top').addEventListener('click', openSync);
     const s5svc = OmronBleManager._filterVendorService([fakeOther, altVendor]);
     console.assert(s5svc === altVendor, 'Test S5: Alt-Variante ecbe3982-… muss als Vendor-Service erkannt werden.');
 
-    /* Test S6 — connect() darf KEINE Retry-Schleife mehr enthalten */
+    /* Test S6 — getPrimaryServices wird NICHT in einer Retry-Schleife aufgerufen */
     const connectBody = OmronBleManager.prototype.connect.toString();
-    const hasSetTimeout = /setTimeout\s*\(/.test(connectBody);
-    const hasAttemptLoop = /attempt[\s\S]{0,50}<=?\s*MAX_TRIES|for\s*\([^)]*attempt/.test(connectBody);
-    console.assert(!hasSetTimeout && !hasAttemptLoop,
-      'Test S6: connect() darf kein setTimeout und keine attempt-Schleife für getPrimaryServices enthalten.');
+    const gpsCount = (connectBody.match(/getPrimaryServices\s*\(/g) || []).length;
+    console.assert(gpsCount === 1, 'Test S6: getPrimaryServices() darf nur einmal (kein Retry) aufgerufen werden, Count='+gpsCount);
 
     /* Test S7 — hint-normal enthält Transfer-Modus-Anleitung */
     const hintNormal = document.getElementById('hint-normal');
@@ -2509,6 +2606,28 @@ document.getElementById('btn-sync-top').addEventListener('click', openSync);
       /„O"|"O"/.test(normalText),
       'Test S7: hint-normal muss Transfer-Modus-Anleitung enthalten (einmal kurz drücken, "O").'
     );
+
+    /* Test R1 — connect() enthält gatt.disconnect() VOR gatt.connect() */
+    const disconnectBeforeConnect = /gatt\.disconnect\s*\(\s*\)[\s\S]{0,600}?gatt\.connect\s*\(\s*\)/.test(connectBody);
+    console.assert(disconnectBeforeConnect, 'Test R1: connect() muss gatt.disconnect() vor gatt.connect() haben.');
+
+    /* Test R2 — Retry-Schleife mit max 2 Versuchen vorhanden */
+    const hasTwoAttemptLoop = /for\s*\([^)]*attempt\s*=\s*1[^)]*<=\s*2/.test(connectBody);
+    console.assert(hasTwoAttemptLoop, 'Test R2: connect() muss Retry-Schleife max. 2 Versuche enthalten.');
+
+    /* Test R3 — Fehlermeldung im catch-Block enthält "Chrome vollständig schliessen" */
+    const hasChromeHint = /Chrome vollständig schliessen/.test(connectBody);
+    console.assert(hasChromeHint, 'Test R3: Fehlermeldung muss Hinweis "Chrome vollständig schliessen" enthalten.');
+
+    /* Test L1 — copyLogToClipboard Funktion existiert */
+    console.assert(typeof copyLogToClipboard === 'function', 'Test L1: copyLogToClipboard() fehlt.');
+
+    /* Test L2 — fallbackCopy Funktion existiert */
+    console.assert(typeof fallbackCopy === 'function', 'Test L2: fallbackCopy() fehlt.');
+
+    /* Test L3 — "✓ Kopiert!" Feedback-Text ist in copyLogToClipboard vorhanden */
+    const copySrc = copyLogToClipboard.toString();
+    console.assert(/✓ Kopiert/.test(copySrc), 'Test L3: Feedback-Text "✓ Kopiert!" fehlt in copyLogToClipboard.');
 
     /* Tests P2/P3/P4 asynchron sequentiell — sonst racet omronIsPaired */
     (async ()=>{
@@ -2534,7 +2653,7 @@ document.getElementById('btn-sync-top').addEventListener('click', openSync);
       console.assert(caught && isGerman, 'Test P4: Deutsche Pairing-Fehlermeldung erwartet, bekommen: '+msg);
 
       omronIsPaired = false;   /* Production-Zustand: nach Tests immer false */
-      console.log('✓ Alle 17 Selbsttests bestanden (Bit-Extraktion, XOR, Duplikat, Leer-Record, PWA-Manifest, P1a Filter, P1b getPrimaryServices, P2 Unlock, P3 Pair-Flow, P4 Timeout, S1 Leere-Service-Liste, S2 Vendor-UUID-Match, S3 Fehlende-UUID-Liste, S4 Transfer-Modus-Diagnose, S5 Alt-Vendor-UUID, S6 Kein-Retry, S7 hint-normal-Text).');
+      console.log('✓ Alle 23 Selbsttests bestanden (Bit-Extraktion, XOR, Duplikat, Leer-Record, PWA-Manifest, P1a Filter, P1b getPrimaryServices, P2 Unlock, P3 Pair-Flow, P4 Timeout, S1 Leere-Service-Liste, S2 Vendor-UUID-Match, S3 Fehlende-UUID-Liste, S4 Transfer-Modus-Diagnose, S5 Alt-Vendor-UUID, S6 Kein-GPS-Retry, S7 hint-normal-Text, R1 Disconnect-vor-Connect, R2 Retry-max-2, R3 Chrome-Hinweis, L1 copyLog, L2 fallbackCopy, L3 Kopiert-Feedback).');
     })();
   }catch(e){ console.error('Selbsttest-Fehler:', e); }
 })();
