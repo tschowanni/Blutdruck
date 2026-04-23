@@ -1656,6 +1656,31 @@ class OmronBleManager {
       await this.unlockChar.startNotifications();
       this.unlockChar.addEventListener('characteristicvaluechanged', (ev)=> this._onUnlockNotify(ev.target.value));
       this._log('Unlock-Char Notify aktiv');
+
+      /* Diagnose: Event-Kanal 8858eb40 — NOTIFY-only Characteristic, die bei
+         manchen OMRON-Firmware-Ständen Pairing-Acks / Status-Events liefert.
+         Wir abonnieren früh und loggen alles Eintreffende, um zu sehen, ob
+         Unlock-Antworten hier statt auf der Unlock-Char landen. */
+      try{
+        const eventChar = await this.service.getCharacteristic('8858eb40-aee8-11e1-bb67-0002a5d5c51b');
+        await eventChar.startNotifications();
+        eventChar.addEventListener('characteristicvaluechanged', (ev)=>{
+          const v = ev.target.value;
+          const bytes = new Uint8Array(v.buffer.slice(v.byteOffset, v.byteOffset + v.byteLength));
+          this._log(`EVENT ← ${this._hex(bytes)}`);
+          /* Falls gerade auf eine Unlock-Antwort gewartet wird, diese auflösen */
+          if(this._unlockPending){
+            const {resolve,timer} = this._unlockPending;
+            this._unlockPending = null;
+            clearTimeout(timer);
+            resolve(bytes);
+          }
+        });
+        this._log('Event-Char (8858eb40) Notify aktiv');
+      }catch(e){
+        this._log(`Event-Char (8858eb40) nicht verfügbar: ${e.message}`);
+      }
+
       this._setState('CONNECTED');
     }catch(err){
       this._log(`Verbindung fehlgeschlagen: ${err.message}`);
@@ -1756,15 +1781,45 @@ class OmronBleManager {
     return 'paired';
   }
 
-  /* Hilfsfunktion: Unlock-Paket schreiben und auf Notify-Antwort warten */
+  /* Hilfsfunktion: Unlock-Paket schreiben und auf Notify-Antwort warten.
+     Fallback-Strategie:
+       1. Nach dem Write auf Notify warten (Unlock-Char oder 8858eb40)
+       2. Bei Timeout: Unlock-Char per readValue() auslesen
+          (manche OMRON-Firmware legt die Antwort als Wert statt als Notify ab) */
   async _unlockAndWait(prefix, key16, timeoutMs){
     const pkt = new Uint8Array(17);
     pkt[0] = prefix;
     pkt.set(key16, 1);
-    this._log(`UNLOCK-TX: ${this._hex(pkt.slice(0,4))}… (${pkt.length} Bytes)`);
+    this._log(`UNLOCK-TX (schreibe): ${this._hex(pkt.slice(0,4))}… (${pkt.length} Bytes)`);
     const waitResp = this._waitUnlockResponse(timeoutMs);
-    await this.unlockChar.writeValueWithResponse(pkt);
-    const resp = await waitResp;
+    try{
+      await this.unlockChar.writeValueWithResponse(pkt);
+      this._log('UNLOCK-TX ✓ Write bestätigt (ATT Write-Response)');
+    }catch(wErr){
+      this._log(`UNLOCK-TX ✗ Write-Fehler: ${wErr.message}`);
+      /* Timer/Pending abräumen, damit der Promise nicht hängt */
+      if(this._unlockPending){
+        const {timer} = this._unlockPending;
+        this._unlockPending = null;
+        clearTimeout(timer);
+      }
+      throw wErr;
+    }
+    let resp;
+    try{
+      resp = await waitResp;
+    }catch(notifyErr){
+      /* Notify-Timeout → Read-Fallback */
+      this._log(`Notify-Timeout — probiere Read-Fallback auf Unlock-Char …`);
+      try{
+        const dv = await this.unlockChar.readValue();
+        resp = new Uint8Array(dv.buffer.slice(dv.byteOffset, dv.byteOffset + dv.byteLength));
+        this._log(`UNLOCK-READ: ${this._hex(resp)}`);
+      }catch(readErr){
+        this._log(`Read-Fallback ebenfalls fehlgeschlagen: ${readErr.message}`);
+        throw notifyErr;  /* ursprünglichen Timeout-Fehler weiterwerfen */
+      }
+    }
     return (resp[1] << 8) | resp[2];
   }
   _onUnlockNotify(value){
