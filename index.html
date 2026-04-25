@@ -258,9 +258,9 @@
   .section{background:var(--surface);border-radius:var(--radius);box-shadow:var(--shadow-1);margin-bottom:12px;overflow:hidden}
   .section-body{padding:14px 16px}
 
-  .l{font-size:.625rem;color:var(--text-3);font-weight:500;text-transform:uppercase;letter-spacing:.6px;display:flex;align-items:center;gap:6px}
+  .l{font-size:.72rem;color:var(--text-2);font-weight:700;text-transform:uppercase;letter-spacing:.5px;display:flex;align-items:center;gap:6px;line-height:1.3}
   .v{font-size:1.75rem;font-weight:400;margin-top:6px;color:var(--text);line-height:1.05;letter-spacing:-.5px}
-  .d{font-size:.69rem;color:var(--text-3);margin-top:6px}
+  .d{font-size:.72rem;color:var(--text-3);margin-top:6px;font-weight:500}
   .d .up{color:var(--ok);font-weight:500}
   .d .down{color:var(--danger);font-weight:500}
 
@@ -336,11 +336,11 @@
   .range-tab{background:var(--surface);border:1px solid var(--border);color:var(--text-2);padding:6px 12px;border-radius:14px;font-size:.75rem;font-weight:500;white-space:nowrap}
   .range-tab.active{background:var(--primary);color:var(--on-primary);border-color:var(--primary)}
 
-  .stat-tile{background:var(--surface);border-radius:var(--radius);padding:12px 14px;box-shadow:var(--shadow-1);position:relative;overflow:hidden}
-  .stat-tile .l{font-size:.625rem}
-  .stat-tile .v{font-size:1.375rem;margin-top:4px;font-weight:500;letter-spacing:-.3px}
-  .stat-tile .v small{font-size:.75rem;color:var(--text-3);font-weight:400;margin-left:3px}
-  .stat-tile .d{font-size:.625rem}
+  .stat-tile{background:var(--surface);border-radius:var(--radius);padding:12px 14px;box-shadow:var(--shadow-1);position:relative;overflow:hidden;display:flex;flex-direction:column;justify-content:space-between;min-height:90px}
+  .stat-tile .l{font-size:.72rem;font-weight:700;color:var(--text-2)}
+  .stat-tile .v{font-size:clamp(1.4rem,2.6vw,2rem);margin-top:6px;font-weight:700;letter-spacing:-.2px;color:var(--primary);line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .stat-tile .v small{font-size:.78rem;color:var(--text-3);font-weight:500;margin-left:3px}
+  .stat-tile .d{font-size:.72rem;color:var(--text-3);font-weight:500;margin-top:4px}
   .stat-tile.ok{border-left:3px solid var(--ok)}
   .stat-tile.warn{border-left:3px solid var(--warn)}
   .stat-tile.high{border-left:3px solid var(--danger)}
@@ -355,6 +355,11 @@
   .chart-wrap{position:relative;padding:12px 10px 4px;height:230px}
   .chart-wrap.sm{height:180px}
   .chart-wrap.lg{height:280px}
+  /* Trend-Badge unter Linien-Charts: zeigt Mittelwerte und Trendrichtungen */
+  .chart-trend-badge{display:flex;flex-wrap:wrap;gap:8px 14px;justify-content:flex-end;font-size:.72rem;padding:6px 14px 10px;border-top:1px solid var(--border-2);background:var(--surface)}
+  .chart-trend-badge .trend-item{font-weight:600;white-space:nowrap}
+  .chart-trend-badge .avg-item{color:var(--text-2);font-weight:500;white-space:nowrap}
+  .chart-trend-badge .avg-item strong{color:var(--text);font-weight:700}
   .empty{padding:26px 16px;text-align:center;color:var(--text-3);font-size:.82rem}
 
   .alert-banner{background:var(--danger-bg);color:var(--danger);border-radius:var(--radius);padding:12px 14px;margin-bottom:12px;display:flex;gap:10px;align-items:flex-start;font-size:.82rem}
@@ -518,7 +523,11 @@
     <div class="stat-tile info"><div class="l">Min Puls</div><div class="v" id="s-min-pul">—</div><div class="d" id="s-min-pul-d">—</div></div>
   </div>
   <div class="section"><div class="card-head"><h4>Klassifikation nach ESH/WHO</h4></div><div class="section-body"><div class="class-bar" id="class-bar"></div><div class="class-legend" id="class-legend"></div></div></div>
-  <div class="section"><div class="card-head"><h4>Verlauf &amp; Trend</h4></div><div class="chart-wrap lg"><canvas id="stat-chart-trend"></canvas></div></div>
+  <div class="section">
+    <div class="card-head"><h4>Verlauf &amp; Trend</h4></div>
+    <div class="chart-wrap lg"><canvas id="stat-chart-trend"></canvas></div>
+    <div class="chart-trend-badge" id="stat-chart-trend-badge"></div>
+  </div>
   <div class="section">
     <div class="card-head"><h4>Morgens vs. Abends</h4></div>
     <div class="section-body"><div class="grid-2">
@@ -528,12 +537,16 @@
     <div class="chart-wrap sm"><canvas id="stat-chart-me"></canvas></div>
   </div>
   <div class="section"><div class="card-head"><h4>Wochentags-Übersicht</h4></div><div class="chart-wrap"><canvas id="stat-chart-wd"></canvas></div></div>
-  <div class="section"><div class="card-head"><h4>Puls-Verlauf</h4></div><div class="chart-wrap sm"><canvas id="stat-chart-pulse"></canvas></div></div>
+  <div class="section">
+    <div class="card-head"><h4>Puls-Verlauf</h4></div>
+    <div class="chart-wrap sm"><canvas id="stat-chart-pulse"></canvas></div>
+    <div class="chart-trend-badge" id="stat-chart-pulse-badge"></div>
+  </div>
   <div class="section">
     <div class="card-head"><h4>Weitere Kennzahlen</h4></div>
     <div class="section-body"><div class="grid-2">
-      <div class="stat-tile info"><div class="l">Std.abw. Sys</div><div class="v" id="s-std-sys">—</div><div class="d">Streuung (σ)</div></div>
-      <div class="stat-tile info"><div class="l">Std.abw. Dia</div><div class="v" id="s-std-dia">—</div><div class="d">Streuung (σ)</div></div>
+      <div class="stat-tile info"><div class="l">Std.abw. Sys</div><div class="v" id="s-std-sys">—</div><div class="d">Streuung ±</div></div>
+      <div class="stat-tile info"><div class="l">Std.abw. Dia</div><div class="v" id="s-std-dia">—</div><div class="d">Streuung ±</div></div>
       <div class="stat-tile info"><div class="l">Mittl. arter. Druck</div><div class="v" id="s-map">—</div><div class="d">MAP ≈ Dia + (Sys-Dia)/3</div></div>
       <div class="stat-tile info"><div class="l">Puls-Druck</div><div class="v" id="s-pp">—</div><div class="d">Sys − Dia</div></div>
     </div></div>
@@ -593,13 +606,22 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="var(--ico-import)" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
           Import
         </button>
-        <button class="btn outline full" onclick="exportCSV()">
+        <button class="btn outline" onclick="exportCSV()">
           <svg viewBox="0 0 24 24" fill="none" stroke="var(--ico-csv)" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="3" x2="9" y2="21"/></svg>
-          CSV-Export (Tabelle)
+          CSV-Export
+        </button>
+        <button class="btn outline" onclick="document.getElementById('file-csv-import').click()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="var(--ico-import)" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="3" x2="9" y2="21"/><polyline points="9 13 12 16 15 13" stroke="var(--ico-import)"/></svg>
+          CSV-Import
         </button>
       </div>
       <input type="file" id="file-import" accept=".json,application/json" style="display:none" onchange="importJSON(event)">
-      <p style="margin:14px 0 0;font-size:.69rem;color:var(--text-3);line-height:1.5">Der Export wird im Verzeichnis <b>Download</b> des Geräts gespeichert. Dateiname: <code style="background:var(--surface-2);padding:1px 4px;border-radius:3px">jjjj.mm.tt hh-mm Backup Blutdruckdaten.json</code>.</p>
+      <input type="file" id="file-csv-import" accept=".csv,text/csv,text/plain" style="display:none" onchange="importCSV(event)">
+      <p style="margin:14px 0 0;font-size:.69rem;color:var(--text-3);line-height:1.5">
+        Der Export wird im Verzeichnis <b>Download</b> des Geräts gespeichert.<br>
+        <b>JSON-Backup:</b> komplette Datenbank inkl. Einstellungen — ideal für Geräte-Wechsel.<br>
+        <b>CSV-Import:</b> ergänzt Messungen aus einer CSV-Datei (eigener CSV-Export oder OMRON-Connect-Export). Bestehende Daten bleiben erhalten, Duplikate werden automatisch erkannt und übersprungen.
+      </p>
     </div>
   </div>
   <div class="section">
@@ -814,6 +836,7 @@
 <div class="toast" id="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.7.0/jspdf.plugin.autotable.min.js"></script>
 
@@ -1223,26 +1246,62 @@ document.getElementById('stat-tabs').addEventListener('click', e=>{ if(e.target.
 function renderStatChartTrend(data){
   if(state.charts.trend) state.charts.trend.destroy();
   const labels = data.map(r=>fmt.shortDate(r.ts));
+  const sys = data.map(r=>r.sys), dia = data.map(r=>r.dia);
+  const sysAvg = sys.length ? sys.reduce((a,b)=>a+b,0) / sys.length : 0;
+  const diaAvg = dia.length ? dia.reduce((a,b)=>a+b,0) / dia.length : 0;
+  const sysT = calcLinearTrend(sys);
+  const diaT = calcLinearTrend(dia);
+  const sysTI = trendLabel(sysT.slope, 'mmHg');
+  const diaTI = trendLabel(diaT.slope, 'mmHg');
   const ctx = document.getElementById('stat-chart-trend').getContext('2d');
   state.charts.trend = new Chart(ctx, chartOptions('line', {
     labels, datasets:[
-      { label:'Sys', data:data.map(r=>r.sys), borderColor:css('--primary'), backgroundColor:'rgba(21,101,192,.08)', fill:true, tension:.3, pointRadius:3, pointBackgroundColor:data.map(r=>classify(r.sys,r.dia).color) },
-      { label:'Dia', data:data.map(r=>r.dia), borderColor:css('--primary-light'), tension:.3, pointRadius:2 },
-      { label:'Grenze 140', data:new Array(labels.length).fill(140), borderColor:'rgba(229,57,53,.5)', borderDash:[4,4], pointRadius:0, borderWidth:1 },
-      { label:'Grenze 90',  data:new Array(labels.length).fill(90),  borderColor:'rgba(229,57,53,.3)', borderDash:[4,4], pointRadius:0, borderWidth:1 }
+      { label:'Sys', data:sys, borderColor:css('--primary'), backgroundColor:'rgba(21,101,192,.08)', fill:true, tension:.3, pointRadius:3, pointBackgroundColor:data.map(r=>classify(r.sys,r.dia).color), order:3 },
+      { label:'Dia', data:dia, borderColor:css('--primary-light'), tension:.3, pointRadius:2, order:3 },
+      { label:'Grenze 140', data:new Array(labels.length).fill(140), borderColor:'rgba(229,57,53,.5)', borderDash:[4,4], pointRadius:0, borderWidth:1, order:4 },
+      { label:'Grenze 90',  data:new Array(labels.length).fill(90),  borderColor:'rgba(229,57,53,.3)', borderDash:[4,4], pointRadius:0, borderWidth:1, order:4 },
+      /* Mittelwertlinien (gestrichelt) */
+      { label:`Ø Sys ${Math.round(sysAvg)} mmHg`, data:sys.map(()=>Math.round(sysAvg*10)/10), borderColor:'rgba(30,80,160,.6)', backgroundColor:'transparent', borderWidth:1.5, borderDash:[7,5], pointRadius:0, fill:false, tension:0, order:2, datalabels:{display:false} },
+      { label:`Ø Dia ${Math.round(diaAvg)} mmHg`, data:dia.map(()=>Math.round(diaAvg*10)/10), borderColor:'rgba(100,160,220,.6)', backgroundColor:'transparent', borderWidth:1.5, borderDash:[7,5], pointRadius:0, fill:false, tension:0, order:2, datalabels:{display:false} },
+      /* Trendlinien (lineare Regression, fein gestrichelt) */
+      { label:sysTI.text, data:sysT.trendData, borderColor:sysTI.color, backgroundColor:'transparent', borderWidth:2,   borderDash:[3,3], pointRadius:0, fill:false, tension:0, order:1, datalabels:{display:false} },
+      { label:diaTI.text, data:diaT.trendData, borderColor:diaTI.color, backgroundColor:'transparent', borderWidth:1.5, borderDash:[3,3], pointRadius:0, fill:false, tension:0, order:1, datalabels:{display:false} }
     ]
   }));
+  const badge = document.getElementById('stat-chart-trend-badge');
+  if(badge){
+    badge.innerHTML = `
+      <span class="avg-item">⌀ Sys: <strong>${Math.round(sysAvg)} mmHg</strong></span>
+      <span class="trend-item" style="color:${sysTI.color}">${sysTI.text}</span>
+      <span class="avg-item">⌀ Dia: <strong>${Math.round(diaAvg)} mmHg</strong></span>
+      <span class="trend-item" style="color:${diaTI.color}">${diaTI.text}</span>
+    `;
+  }
 }
 function renderStatChartME(s){
   if(state.charts.me) state.charts.me.destroy();
   const ctx = document.getElementById('stat-chart-me').getContext('2d');
-  state.charts.me = new Chart(ctx, chartOptions('bar', {
+  const opts = chartOptions('bar', {
     labels:['Morgens','Abends'],
     datasets:[
       { label:'Sys', data:[s.morn?Math.round(s.morn.sys):0, s.eve?Math.round(s.eve.sys):0], backgroundColor:css('--primary') },
       { label:'Dia', data:[s.morn?Math.round(s.morn.dia):0, s.eve?Math.round(s.eve.dia):0], backgroundColor:css('--primary-light') }
     ]
-  }));
+  });
+  /* Balken-Werte als grosse Zahl mittig im Balken anzeigen.
+     Sys-Balken (Dataset 0, dunkles Primary): weisse Schrift.
+     Dia-Balken (Dataset 1, helles Primary): dunkelblaue Schrift für Lesbarkeit. */
+  opts.options.plugins.datalabels = {
+    display: ctx => (ctx.dataset.data[ctx.dataIndex] || 0) > 0,
+    formatter: v => Math.round(v),
+    anchor: 'center',
+    align: 'center',
+    color: ctx => ctx.datasetIndex === 0 ? '#ffffff' : '#1a3a6b',
+    font: { size: 18, weight: 'bold' },
+    textShadowColor: ctx => ctx.datasetIndex === 0 ? 'rgba(0,0,0,.4)' : 'rgba(255,255,255,.6)',
+    textShadowBlur: 3
+  };
+  state.charts.me = new Chart(ctx, opts);
 }
 function renderStatChartWD(s){
   if(state.charts.wd) state.charts.wd.destroy();
@@ -1257,17 +1316,72 @@ function renderStatChartWD(s){
 }
 function renderStatChartPulse(data){
   if(state.charts.pulse) state.charts.pulse.destroy();
+  const labels = data.map(r=>fmt.shortDate(r.ts));
+  const pul = data.map(r=>r.pul);
+  const pulAvg = pul.length ? pul.reduce((a,b)=>a+b,0) / pul.length : 0;
+  const pulT = calcLinearTrend(pul);
+  const pulTI = trendLabel(pulT.slope, 'bpm');
   const ctx = document.getElementById('stat-chart-pulse').getContext('2d');
   state.charts.pulse = new Chart(ctx, chartOptions('line', {
-    labels: data.map(r=>fmt.shortDate(r.ts)),
-    datasets:[ { label:'Puls', data:data.map(r=>r.pul), borderColor:'#c62828', backgroundColor:'rgba(198,40,40,.1)', fill:true, tension:.3, pointRadius:1 } ]
+    labels,
+    datasets:[
+      { label:'Puls', data:pul, borderColor:'#c62828', backgroundColor:'rgba(198,40,40,.1)', fill:true, tension:.3, pointRadius:1, order:3 },
+      { label:`Ø Puls ${Math.round(pulAvg)} bpm`, data:pul.map(()=>Math.round(pulAvg*10)/10), borderColor:'rgba(160,30,30,.55)', backgroundColor:'transparent', borderWidth:1.5, borderDash:[7,5], pointRadius:0, fill:false, tension:0, order:2, datalabels:{display:false} },
+      { label:pulTI.text, data:pulT.trendData, borderColor:pulTI.color, backgroundColor:'transparent', borderWidth:2, borderDash:[3,3], pointRadius:0, fill:false, tension:0, order:1, datalabels:{display:false} }
+    ]
   }));
+  const badge = document.getElementById('stat-chart-pulse-badge');
+  if(badge){
+    badge.innerHTML = `
+      <span class="avg-item">⌀ Puls: <strong>${Math.round(pulAvg)} bpm</strong></span>
+      <span class="trend-item" style="color:${pulTI.color}">${pulTI.text}</span>
+    `;
+  }
 }
 
 /* ============================================================
  *  CHART HELPERS
  * ============================================================ */
 function css(v){ return getComputedStyle(document.body).getPropertyValue(v).trim() || '#1565c0'; }
+
+/* datalabels-Plugin global registrieren (sobald CDN geladen).
+   In chartOptions() wird datalabels per Default deaktiviert; einzelne
+   Charts (Bar) aktivieren es explizit über opts.options.plugins.datalabels. */
+if(typeof ChartDataLabels !== 'undefined' && typeof Chart !== 'undefined'){
+  try{ Chart.register(ChartDataLabels); }catch(e){ console.warn('ChartDataLabels-Registrierung:', e); }
+}
+
+/* Lineare Regression nach Methode der kleinsten Quadrate.
+   Liefert ein Array trendData mit y-Werten auf der Trendlinie und den
+   Slope (Steigung pro Index-Schritt = pro Messung). */
+function calcLinearTrend(values){
+  const n = values.length;
+  if(n < 2) return { trendData: values.slice(), slope: 0 };
+  let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
+  for(let i=0; i<n; i++){
+    sumX  += i;
+    sumY  += values[i];
+    sumXY += i * values[i];
+    sumX2 += i * i;
+  }
+  const denom = n * sumX2 - sumX * sumX;
+  const slope = denom !== 0 ? (n * sumXY - sumX * sumY) / denom : 0;
+  const intercept = (sumY - slope * sumX) / n;
+  const trendData = values.map((_, i) => Math.round((intercept + slope * i) * 10) / 10);
+  return { trendData, slope };
+}
+
+/* Liefert {text, color} für einen Slope: Pfeil + Beschreibung + Farbe.
+   Schwellwert 0.3 ≈ "stabil" (Trend < 0.3 mmHg pro Messung). */
+function trendLabel(slope, unit){
+  unit = unit || 'mmHg';
+  const s = slope.toFixed(1);
+  const sign = slope >= 0 ? '+' : '';
+  if(slope >  0.3) return { text:`↑ Trend steigend (${sign}${s} ${unit}/Messung)`, color:'#c0392b' };
+  if(slope < -0.3) return { text:`↓ Trend sinkend (${sign}${s} ${unit}/Messung)`,   color:'#27ae60' };
+  return                { text:`→ Trend stabil (${sign}${s} ${unit}/Messung)`,        color:'#7f8c8d' };
+}
+
 function chartOptions(type, data){
   const isDark = state.settings.theme==='dark';
   const grid = isDark ? 'rgba(255,255,255,.06)' : 'rgba(0,0,0,.06)';
@@ -1275,7 +1389,11 @@ function chartOptions(type, data){
   return {
     type, data,
     options:{ responsive:true, maintainAspectRatio:false, interaction:{ mode:'index', intersect:false },
-      plugins:{ legend:{ display:true, labels:{ color:tick, boxWidth:10, padding:10, font:{size:11} } }, tooltip:{ mode:'index' } },
+      plugins:{
+        legend:{ display:true, labels:{ color:tick, boxWidth:10, padding:10, font:{size:11} } },
+        tooltip:{ mode:'index' },
+        datalabels:{ display:false }   /* Default: aus. Bar-Charts überschreiben. */
+      },
       scales:{ y:{ grid:{ color:grid }, ticks:{ color:tick, font:{size:10} }, beginAtZero:false },
         x:{ grid:{ color:grid, display:false }, ticks:{ color:tick, font:{size:10}, maxRotation:0, autoSkip:true, maxTicksLimit:7 } } } }
   };
@@ -1764,6 +1882,19 @@ class OmronBleManager {
       this._setState('CONNECTED');
       return 'echo-bypass';
     }
+    /* Junk-Bypass: Antwort ist nur Nullen / leer / unplausibel.
+       Gerät reagiert nicht im omblepy-Sinn auf unsere Pairing-Kommandos.
+       Vermutung: OS-Bond ist die einzige Authentifizierung, und Datenbefehle
+       werden direkt akzeptiert. Wir überspringen Pairing und probieren
+       EEPROM-Reads. */
+    if(respA && OmronBleManager._isJunkResponse(respA.bytes)){
+      this._log('SCHRITT A → Antwort ist leer/Nullen — Gerät reagiert nicht auf omblepy-Pairing.');
+      this._log('Überspringe SCHRITT B/C/D und versuche direkten EEPROM-Zugriff (OS-Bond als einzige Authentifizierung).');
+      this.pairingKey = OmronBleManager.PAIR_KEY;
+      omronIsPaired = true;
+      this._setState('CONNECTED');
+      return 'junk-bypass';
+    }
     const codeA = respA ? respA.code : 0;
     this._log(`SCHRITT A — Antwort 0x${codeA.toString(16).padStart(4,'0')} → wechsle zu SCHRITT B`);
 
@@ -1900,6 +2031,20 @@ class OmronBleManager {
       }, timeoutMs);
       this._unlockPending = { resolve, reject, timer };
     });
+  }
+
+  /* Heuristik: Antwort sieht aus wie „leer/junk" (alle Nullen, alle 0xFF,
+     unplausible Länge, falsche XOR-Prüfsumme). In allen Fällen handelt es
+     sich nicht um eine echte Geräteantwort im omblepy-Sinn. */
+  static _isJunkResponse(bytes){
+    if(!bytes || bytes.length < 3) return true;
+    const totalLen = bytes[0];
+    if(totalLen === 0 || totalLen > 64) return true;     /* unplausible Paketlänge */
+    if(bytes.length >= totalLen){
+      let xor = 0; for(let i=0; i<totalLen; i++) xor ^= bytes[i];
+      if(xor !== 0) return true;                         /* falsche Checksumme */
+    }
+    return false;
   }
 
   /* RX-Kanal idempotent abonnieren — funktioniert sowohl früh aus connect()
@@ -2320,6 +2465,181 @@ function download(blob, name){
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name;
   document.body.appendChild(a); a.click(); setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 500);
 }
+/* ============================================================
+ *  CSV-IMPORT
+ *  - Akzeptiert eigenen CSV-Export (Spalten: Datum;Zeit;Sys;Dia;Puls;Arm;MOV;IHB;Notiz)
+ *  - Akzeptiert auch OMRON-Connect-CSV (verschiedene Spaltennamen, ggf. Komma statt Strichpunkt)
+ *  - ERGÄNZT bestehende Daten (löscht NICHTS)
+ *  - Duplikate werden über (timestamp ÷ 60s, sys, dia, pul) erkannt und übersprungen
+ *  - Datumsformate: TT.MM.JJJJ, TT/MM/JJJJ, JJJJ-MM-TT  (mit optionaler Uhrzeit HH:MM oder HH:MM:SS)
+ * ============================================================ */
+
+/* CSV-Parser, der quoted Felder, Strichpunkt/Komma/Tab und CR/LF korrekt verarbeitet */
+function _parseCSV(text){
+  /* BOM entfernen */
+  if(text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
+  /* Trenner auto-erkennen anhand der ersten Zeile */
+  const firstLine = text.split(/\r?\n/, 1)[0] || '';
+  const counts = { ';': (firstLine.match(/;/g)||[]).length,
+                   ',': (firstLine.match(/,/g)||[]).length,
+                   '\t': (firstLine.match(/\t/g)||[]).length };
+  let sep = ';';
+  if(counts[','] > counts[sep]) sep = ',';
+  if(counts['\t'] > counts[sep]) sep = '\t';
+  const rows = []; let row = []; let field = ''; let inQ = false;
+  for(let i=0; i<text.length; i++){
+    const ch = text[i];
+    if(inQ){
+      if(ch === '"' && text[i+1] === '"'){ field += '"'; i++; }
+      else if(ch === '"') inQ = false;
+      else field += ch;
+    } else {
+      if(ch === '"') inQ = true;
+      else if(ch === sep){ row.push(field); field = ''; }
+      else if(ch === '\n'){ row.push(field); rows.push(row); row = []; field = ''; }
+      else if(ch === '\r'){ /* skip */ }
+      else field += ch;
+    }
+  }
+  if(field.length || row.length){ row.push(field); rows.push(row); }
+  return rows;
+}
+
+/* Spalten-Index suchen (case-insensitive, akzeptiert Aliase) */
+function _findCol(header, ...needles){
+  for(let i=0; i<header.length; i++){
+    const h = String(header[i] || '').toLowerCase().trim();
+    for(const n of needles){
+      const nn = String(n).toLowerCase();
+      if(h === nn || h.includes(nn)) return i;
+    }
+  }
+  return -1;
+}
+
+/* Monatsnamen-Lookup, deutsch + englisch, mit/ohne Punkt, lowercase */
+const _MONTH_NAMES = {
+  'jan':1,'januar':1,'january':1,
+  'feb':2,'februar':2,'february':2,
+  'mär':3,'mar':3,'märz':3,'maerz':3,'march':3,
+  'apr':4,'april':4,
+  'mai':5,'may':5,
+  'jun':6,'juni':6,'june':6,
+  'jul':7,'juli':7,'july':7,
+  'aug':8,'august':8,
+  'sep':9,'sept':9,'september':9,
+  'okt':10,'oct':10,'oktober':10,'october':10,
+  'nov':11,'november':11,
+  'dez':12,'dec':12,'dezember':12,'december':12
+};
+
+/* Datum + Uhrzeit zu Timestamp parsen. Liefert null bei Fehler.
+   Unterstützt mehrere Formate:
+     · TT.MM.JJJJ          (eigener Export)
+     · TT/MM/JJJJ
+     · JJJJ-MM-TT          (ISO)
+     · TT MMM. JJJJ        (OMRON Connect, z.B. "25 Apr. 2026")
+     · TT MMM JJJJ         (ohne Punkt)
+   Uhrzeit:  HH:MM | HH:MM:SS */
+function _parseDateTime(dateStr, timeStr){
+  if(!dateStr) return null;
+  const ds = String(dateStr).trim();
+  let y, mo, d;
+  let m;
+  /* DD.MM.YYYY oder DD/MM/YYYY oder DD-MM-YYYY (numerisch) */
+  if((m = ds.match(/^(\d{1,2})[.\/\-](\d{1,2})[.\/\-](\d{2,4})$/))){
+    d = parseInt(m[1]); mo = parseInt(m[2]);
+    y = parseInt(m[3]); if(m[3].length <= 2) y += 2000;
+  }
+  /* YYYY-MM-DD (ISO) */
+  else if((m = ds.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/))){
+    y = parseInt(m[1]); mo = parseInt(m[2]); d = parseInt(m[3]);
+  }
+  /* DD MMM[.] YYYY (z.B. "25 Apr. 2026", "25 April 2026", "25 Apr 2026") */
+  else if((m = ds.match(/^(\d{1,2})\.?\s+([A-Za-zÄÖÜäöü]+)\.?\s+(\d{2,4})$/))){
+    d = parseInt(m[1]);
+    const monName = m[2].toLowerCase().replace(/[äöü]/g, ch => ({ä:'a',ö:'o',ü:'u'}[ch]));
+    mo = _MONTH_NAMES[monName] || _MONTH_NAMES[m[2].toLowerCase()];
+    y = parseInt(m[3]); if(m[3].length <= 2) y += 2000;
+    if(!mo) return null;
+  }
+  else return null;
+  let hh=0, mm=0, ss=0;
+  if(timeStr){
+    const tm = String(timeStr).trim().match(/^(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?/);
+    if(tm){ hh=parseInt(tm[1]); mm=parseInt(tm[2]); ss=tm[3]?parseInt(tm[3]):0; }
+  }
+  if(mo<1 || mo>12 || d<1 || d>31 || hh>23 || mm>59 || ss>59) return null;
+  const dt = new Date(y, mo-1, d, hh, mm, ss);
+  return isNaN(dt.getTime()) ? null : dt.getTime();
+}
+
+function importCSV(ev){
+  const file = ev.target.files[0]; if(!file) return;
+  const fr = new FileReader();
+  fr.onload = e => {
+    try{
+      const text = e.target.result;
+      const rows = _parseCSV(text);
+      if(rows.length < 2) throw new Error('CSV enthält keine Datenzeilen.');
+      const header = rows[0].map(h => String(h || '').trim());
+      const idxDate = _findCol(header, 'datum', 'date');
+      const idxTime = _findCol(header, 'zeit', 'uhrzeit', 'time');
+      const idxSys  = _findCol(header, 'systolisch', 'systolic', 'sys');
+      const idxDia  = _findCol(header, 'diastolisch', 'diastolic', 'dia');
+      const idxPul  = _findCol(header, 'puls', 'pulse');
+      const idxArm  = _findCol(header, 'arm', 'körperseite', 'side');
+      const idxIHB  = _findCol(header, 'ihb', 'unregelmäßig', 'unregelmaessig', 'irregular', 'afib');
+      const idxMOV  = _findCol(header, 'mov', 'bewegung', 'movement');
+      const idxNote = _findCol(header, 'notiz', 'note', 'kommentar', 'comment');
+      if(idxDate < 0 || idxSys < 0 || idxDia < 0){
+        throw new Error('Pflichtspalten nicht gefunden (Datum, Systolisch, Diastolisch). Gefundene Spalten: ' + header.join(', '));
+      }
+      const key = r => `${Math.floor(r.ts/60000)}-${r.sys}-${r.dia}-${r.pul||r.bpm}`;
+      const existing = new Set(state.readings.map(key));
+      let added = 0, dup = 0, errors = 0;
+      for(let i=1; i<rows.length; i++){
+        const row = rows[i];
+        if(!row || row.length === 0 || row.every(c => !String(c||'').trim())) continue;
+        try{
+          const dateStr = row[idxDate] || '';
+          const timeStr = idxTime >= 0 ? (row[idxTime] || '') : '';
+          const ts = _parseDateTime(dateStr, timeStr);
+          if(!ts){ errors++; continue; }
+          const sys = parseInt(row[idxSys]);
+          const dia = parseInt(row[idxDia]);
+          const pul = idxPul >= 0 ? (parseInt(row[idxPul]) || 0) : 0;
+          if(!sys || !dia || sys<50 || sys>260 || dia<30 || dia>200){ errors++; continue; }
+          const armRaw = idxArm >= 0 ? String(row[idxArm]||'').toLowerCase().trim() : '';
+          const arm = (armRaw.includes('recht') || armRaw === 'right' || armRaw === 'r') ? 'rechts' : 'links';
+          const note = idxNote >= 0 ? String(row[idxNote]||'').trim() : '';
+          const irrRaw = idxIHB >= 0 ? String(row[idxIHB]||'').toLowerCase().trim() : '';
+          const movRaw = idxMOV >= 0 ? String(row[idxMOV]||'').toLowerCase().trim() : '';
+          const irr = /^(ja|yes|true|1|x)$/.test(irrRaw);
+          const mov = /^(ja|yes|true|1|x)$/.test(movRaw);
+          const rec = { id: uid(), ts, sys, dia, pul, arm, note, irr, mov };
+          if(existing.has(key(rec))){ dup++; continue; }
+          state.readings.push(rec);
+          existing.add(key(rec));
+          persistReading(rec);
+          added++;
+        } catch(rowErr){ errors++; }
+      }
+      state.readings.sort((a,b) => a.ts - b.ts);
+      let msg = `${added} neue Messungen importiert`;
+      if(dup) msg += ` · ${dup} Duplikate übersprungen`;
+      if(errors) msg += ` · ${errors} ungültige Zeilen`;
+      toast(msg);
+      renderOverview();
+    }catch(err){
+      console.error('CSV-Import-Fehler:', err);
+      toast('CSV-Import fehlgeschlagen: ' + err.message);
+    }
+    ev.target.value = '';
+  };
+  fr.readAsText(file, 'UTF-8');
+}
+
 function importJSON(ev){
   const file = ev.target.files[0]; if(!file) return;
   const fr = new FileReader();
@@ -2369,7 +2689,7 @@ async function generatePDF(){
   if(!data.length){ toast('Keine Daten im gewählten Zeitraum'); return; }
   toast('PDF wird erstellt …');
   const { jsPDF } = window.jspdf;
-  const doc = new jsPDF({ unit:'mm', format:'a4' });
+  const doc = new jsPDF({ unit:'mm', format:'a4', compress:true });
   const pageW = doc.internal.pageSize.getWidth();
   const pageH = doc.internal.pageSize.getHeight();
   const s = computeStats(data.slice().sort((a,b)=>a.ts-b.ts));
@@ -2395,8 +2715,8 @@ async function generatePDF(){
   doc.setDrawColor(224,224,224); doc.line(14,y-2, pageW-14,y-2);
   const boxes = [
     { l:'Messungen', v:String(s.count), d:'' },
-    { l:'Ø Systolisch', v:Math.round(s.avgSys)+' mmHg', d:`σ ${s.stdSys.toFixed(1)}` },
-    { l:'Ø Diastolisch', v:Math.round(s.avgDia)+' mmHg', d:`σ ${s.stdDia.toFixed(1)}` },
+    { l:'Ø Systolisch', v:Math.round(s.avgSys)+' mmHg', d:`± ${s.stdSys.toFixed(1)}` },
+    { l:'Ø Diastolisch', v:Math.round(s.avgDia)+' mmHg', d:`± ${s.stdDia.toFixed(1)}` },
     { l:'Ø Puls', v:Math.round(s.avgPul)+' bpm', d:'' },
     { l:'Max Sys/Dia', v:s.maxSys+'/'+s.maxDia, d:'mmHg' },
     { l:'Min Sys/Dia', v:s.minSys+'/'+s.minDia, d:'mmHg' },
@@ -2467,33 +2787,14 @@ async function generatePDF(){
   doc.text('Verlaufs-Grafiken', 14, y); y+=6;
   doc.setDrawColor(224,224,224); doc.line(14,y-2, pageW-14,y-2); y+=2;
   const chartData = data.slice().sort((a,b)=>a.ts-b.ts);
-  const imgTrend = await renderChartToImage('line', {
-    labels: chartData.map(r=>fmt.shortDate(r.ts)),
-    datasets:[
-      { label:'Systolisch', data:chartData.map(r=>r.sys), borderColor:'#1565c0', backgroundColor:'rgba(21,101,192,.15)', fill:true, tension:.3, pointRadius:1 },
-      { label:'Diastolisch', data:chartData.map(r=>r.dia), borderColor:'#90caf9', tension:.3, pointRadius:1 },
-      { label:'140', data:new Array(chartData.length).fill(140), borderColor:'rgba(229,57,53,.6)', borderDash:[4,4], pointRadius:0, borderWidth:1 },
-      { label:'90',  data:new Array(chartData.length).fill(90),  borderColor:'rgba(229,57,53,.4)', borderDash:[4,4], pointRadius:0, borderWidth:1 }
-    ]
-  }, 900, 380);
-  doc.setFontSize(10); doc.setFont('helvetica','bold'); doc.text('Blutdruck-Verlauf', 14, y+4); y+=6;
-  doc.addImage(imgTrend, 'PNG', 14, y, pageW-28, 70); y+=76;
-  const imgPulse = await renderChartToImage('line', {
-    labels: chartData.map(r=>fmt.shortDate(r.ts)),
-    datasets:[ { label:'Puls', data:chartData.map(r=>r.pul), borderColor:'#c62828', backgroundColor:'rgba(198,40,40,.15)', fill:true, tension:.3, pointRadius:1 } ]
-  }, 900, 320);
+  doc.setFontSize(10); doc.setFont('helvetica','bold'); doc.setTextColor(33,33,33);
+  doc.text('Blutdruck-Verlauf', 14, y+4); y+=6;
+  _pdfChartTrend(doc, 14, y, pageW-28, 70, chartData); y+=76;
   doc.setFont('helvetica','bold'); doc.text('Puls-Verlauf', 14, y+4); y+=6;
-  doc.addImage(imgPulse, 'PNG', 14, y, pageW-28, 55); y+=60;
+  _pdfChartPulse(doc, 14, y, pageW-28, 50, chartData); y+=56;
   if(y>pageH-70){ doc.addPage(); y=20; }
-  const imgME = await renderChartToImage('bar', {
-    labels:['Morgens (< 12:00)','Abends (≥ 12:00)'],
-    datasets:[
-      { label:'Sys Ø', data:[s.morn?Math.round(s.morn.sys):0, s.eve?Math.round(s.eve.sys):0], backgroundColor:'#1565c0' },
-      { label:'Dia Ø', data:[s.morn?Math.round(s.morn.dia):0, s.eve?Math.round(s.eve.dia):0], backgroundColor:'#90caf9' }
-    ]
-  }, 900, 320);
   doc.setFont('helvetica','bold'); doc.text('Morgens vs. Abends', 14, y+4); y+=6;
-  doc.addImage(imgME, 'PNG', 14, y, pageW-28, 55); y+=60;
+  _pdfChartMornEve(doc, 14, y, pageW-28, 50, s.morn, s.eve); y+=56;
   doc.addPage();
   doc.setFont('helvetica','bold'); doc.setFontSize(14); doc.setTextColor(33,33,33);
   doc.text('Alle Messungen', 14, 18);
@@ -2529,24 +2830,224 @@ async function generatePDF(){
       doc.text(`Seite ${doc.internal.getCurrentPageInfo().pageNumber}`, pageW-14, pageH-8, {align:'right'});
     }
   });
-  doc.save(`${fmt.filename(Date.now())} Blutdruck Bericht.pdf`);
-  toast('PDF in „Downloads" gespeichert');
+  /* PDF erst als Blob ausgeben, Größe ermitteln, dann speichern */
+  const pdfBlob = doc.output('blob');
+  const sizeKB = (pdfBlob.size / 1024).toFixed(0);
+  console.log(`PDF-Größe: ${sizeKB} KB (${data.length} Messungen)`);
+  if(pdfBlob.size > 2 * 1024 * 1024) console.warn('PDF > 2 MB — Optimierung prüfen!');
+  const pdfFilename = `${fmt.filename(Date.now())} Blutdruck Bericht.pdf`;
+  download(pdfBlob, pdfFilename);
+  toast(`PDF gespeichert (${sizeKB} KB)`);
 }
 function hexToRgb(hex){ const m = hex.replace('#','').match(/.{2}/g); return m ? m.map(h=>parseInt(h,16)) : [128,128,128]; }
-async function renderChartToImage(type, data, w, h){
-  return new Promise(resolve=>{
-    const canvas = document.createElement('canvas');
-    canvas.width = w; canvas.height = h;
-    canvas.style.position='fixed'; canvas.style.left='-9999px';
-    document.body.appendChild(canvas);
-    const ch = new Chart(canvas.getContext('2d'), {
-      type, data,
-      options:{ responsive:false, animation:false, devicePixelRatio:2,
-        plugins:{ legend:{ labels:{ color:'#424242', font:{size:13} } } },
-        scales:{ y:{ grid:{ color:'rgba(0,0,0,.06)' }, ticks:{ color:'#666', font:{size:11} } }, x:{ grid:{ display:false }, ticks:{ color:'#666', font:{size:11}, maxTicksLimit:10 } } } }
-    });
-    setTimeout(()=>{ const img = canvas.toDataURL('image/png'); ch.destroy(); canvas.remove(); resolve(img); }, 120);
+
+/* ============================================================
+ *  VEKTOR-CHART-RENDERER FÜR PDF
+ *  Native jsPDF-Befehle (line, circle, rect, text) — keine Bitmaps.
+ *  Charts sind beliebig zoombar ohne Pixel-Verlust und winzig in der
+ *  Datei (typisch <50 KB pro Chart auch bei 200 Punkten).
+ * ============================================================ */
+
+/* Chart 1: Systolisch + Diastolisch über Zeit, mit ESH/WHO-Bändern */
+function _pdfChartTrend(doc, ox, oy, ow, oh, data){
+  const padL = 14, padR = 4, padT = 3, padB = 10;
+  const cL = ox + padL, cR = ox + ow - padR;
+  const cT = oy + padT, cB = oy + oh - padB;
+  const cW = cR - cL, cH = cB - cT;
+  const yMin = 50, yMax = 200;
+  const yPos = v => cB - ((Math.max(yMin, Math.min(yMax, v)) - yMin) / (yMax - yMin)) * cH;
+  const total = data.length;
+  const xPos = i => total <= 1 ? cL + cW/2 : cL + (i / (total - 1)) * cW;
+  /* ESH/WHO-Referenzbänder von oben (rot) nach unten (grün) */
+  const bands = [
+    { from:160, to:200, c:[245,210,210] },  /* Hyp 2+/3 */
+    { from:140, to:160, c:[251,225,200] },  /* Hyp 1     */
+    { from:130, to:140, c:[252,239,205] },  /* Hoch-Norm */
+    { from:120, to:130, c:[226,239,212] },  /* Normal    */
+    { from: 50, to:120, c:[214,231,210] }   /* Optimal   */
+  ];
+  bands.forEach(b => {
+    const y1 = yPos(b.to), y2 = yPos(b.from);
+    doc.setFillColor(...b.c);
+    doc.rect(cL, y1, cW, y2 - y1, 'F');
   });
+  /* Gridlines + Y-Labels */
+  doc.setDrawColor(190,190,190); doc.setLineWidth(0.1);
+  doc.setFontSize(6); doc.setTextColor(110);
+  [60,80,100,120,140,160,180].forEach(val => {
+    const y = yPos(val);
+    doc.line(cL, y, cR, y);
+    doc.text(String(val), cL - 1.5, y + 1, { align:'right' });
+  });
+  /* Gestrichelte Grenzen 140 (sys) und 90 (dia) */
+  doc.setLineDashPattern([0.8, 0.8], 0);
+  doc.setDrawColor(220,80,80); doc.setLineWidth(0.2);
+  doc.line(cL, yPos(140), cR, yPos(140));
+  doc.line(cL, yPos(90),  cR, yPos(90));
+  doc.setLineDashPattern([], 0);
+  /* Achsen */
+  doc.setDrawColor(60,60,60); doc.setLineWidth(0.25);
+  doc.line(cL, cT, cL, cB);
+  doc.line(cL, cB, cR, cB);
+  /* X-Achsen-Beschriftung (Datum, max. ~7 Labels) */
+  if(total > 0){
+    const maxLbl = Math.min(total, 7);
+    const step = Math.max(1, Math.floor(total / maxLbl));
+    doc.setFontSize(6); doc.setTextColor(100);
+    for(let i=0; i<total; i+=step){
+      const x = xPos(i);
+      const d = new Date(data[i].ts);
+      const lbl = `${String(d.getDate()).padStart(2,'0')}.${String(d.getMonth()+1).padStart(2,'0')}.`;
+      doc.text(lbl, x, cB + 3.5, { align:'center' });
+    }
+  }
+  /* Systolisch-Linie + Punkte */
+  doc.setDrawColor(21,101,192); doc.setLineWidth(0.4);
+  for(let i=1; i<total; i++){
+    doc.line(xPos(i-1), yPos(data[i-1].sys), xPos(i), yPos(data[i].sys));
+  }
+  doc.setFillColor(21,101,192);
+  data.forEach((m, i) => doc.circle(xPos(i), yPos(m.sys), 0.5, 'F'));
+  /* Diastolisch-Linie + Punkte */
+  doc.setDrawColor(144,202,249); doc.setLineWidth(0.4);
+  for(let i=1; i<total; i++){
+    doc.line(xPos(i-1), yPos(data[i-1].dia), xPos(i), yPos(data[i].dia));
+  }
+  doc.setFillColor(144,202,249);
+  data.forEach((m, i) => doc.circle(xPos(i), yPos(m.dia), 0.5, 'F'));
+  /* Rahmen */
+  doc.setDrawColor(120,120,120); doc.setLineWidth(0.15);
+  doc.rect(cL, cT, cW, cH);
+  /* Legende unter dem Chart */
+  const legY = oy + oh - 4;
+  doc.setFillColor(21,101,192);     doc.rect(cL, legY, 3, 1.5, 'F');
+  doc.setFontSize(7); doc.setTextColor(60);
+  doc.text('Systolisch', cL + 4, legY + 1.4);
+  doc.setFillColor(144,202,249);    doc.rect(cL + 26, legY, 3, 1.5, 'F');
+  doc.text('Diastolisch', cL + 30, legY + 1.4);
+  doc.setLineDashPattern([0.8,0.8], 0);
+  doc.setDrawColor(220,80,80); doc.setLineWidth(0.3);
+  doc.line(cL + 56, legY + 0.7, cL + 60, legY + 0.7);
+  doc.setLineDashPattern([], 0);
+  doc.setTextColor(220,80,80);
+  doc.text('Grenze 140 / 90', cL + 61, legY + 1.4);
+}
+
+/* Chart 2: Puls über Zeit (rot, mit auto-skalierter Y-Achse) */
+function _pdfChartPulse(doc, ox, oy, ow, oh, data){
+  const padL = 14, padR = 4, padT = 3, padB = 10;
+  const cL = ox + padL, cR = ox + ow - padR;
+  const cT = oy + padT, cB = oy + oh - padB;
+  const cW = cR - cL, cH = cB - cT;
+  const total = data.length;
+  /* Auto-Y-Skala */
+  let pMin = 999, pMax = 0;
+  data.forEach(m => { if(m.pul < pMin) pMin = m.pul; if(m.pul > pMax) pMax = m.pul; });
+  if(!isFinite(pMin) || pMax === 0){ pMin = 50; pMax = 100; }
+  const yMin = Math.max(40, Math.floor((pMin - 5) / 10) * 10);
+  const yMax = Math.min(200, Math.ceil((pMax + 5) / 10) * 10);
+  const yRange = (yMax - yMin) || 10;
+  const yPos = v => cB - ((Math.max(yMin, Math.min(yMax, v)) - yMin) / yRange) * cH;
+  const xPos = i => total <= 1 ? cL + cW/2 : cL + (i / (total - 1)) * cW;
+  /* Gridlines */
+  doc.setDrawColor(195,195,195); doc.setLineWidth(0.1);
+  doc.setFontSize(6); doc.setTextColor(110);
+  for(let v = yMin; v <= yMax; v += 10){
+    const y = yPos(v);
+    doc.line(cL, y, cR, y);
+    doc.text(String(v), cL - 1.5, y + 1, { align:'right' });
+  }
+  /* Achsen */
+  doc.setDrawColor(60); doc.setLineWidth(0.25);
+  doc.line(cL, cT, cL, cB);
+  doc.line(cL, cB, cR, cB);
+  /* X-Beschriftungen */
+  if(total > 0){
+    const maxLbl = Math.min(total, 7);
+    const step = Math.max(1, Math.floor(total / maxLbl));
+    doc.setFontSize(6); doc.setTextColor(100);
+    for(let i=0; i<total; i+=step){
+      const x = xPos(i);
+      const d = new Date(data[i].ts);
+      const lbl = `${String(d.getDate()).padStart(2,'0')}.${String(d.getMonth()+1).padStart(2,'0')}.`;
+      doc.text(lbl, x, cB + 3.5, { align:'center' });
+    }
+  }
+  /* Puls-Linie + Punkte (rot) */
+  doc.setDrawColor(198,40,40); doc.setLineWidth(0.4);
+  for(let i=1; i<total; i++){
+    doc.line(xPos(i-1), yPos(data[i-1].pul), xPos(i), yPos(data[i].pul));
+  }
+  doc.setFillColor(198,40,40);
+  data.forEach((m, i) => doc.circle(xPos(i), yPos(m.pul), 0.5, 'F'));
+  /* Rahmen */
+  doc.setDrawColor(120); doc.setLineWidth(0.15);
+  doc.rect(cL, cT, cW, cH);
+  /* Legende */
+  const legY = oy + oh - 4;
+  doc.setFillColor(198,40,40); doc.rect(cL, legY, 3, 1.5, 'F');
+  doc.setFontSize(7); doc.setTextColor(60);
+  doc.text('Puls (bpm)', cL + 4, legY + 1.4);
+}
+
+/* Chart 3: Morgens vs. Abends — gruppiertes Balkendiagramm */
+function _pdfChartMornEve(doc, ox, oy, ow, oh, morn, eve){
+  const padL = 14, padR = 4, padT = 3, padB = 10;
+  const cL = ox + padL, cR = ox + ow - padR;
+  const cT = oy + padT, cB = oy + oh - padB;
+  const cW = cR - cL, cH = cB - cT;
+  const groups = [
+    { lbl:'Morgens (<12:00)', sys: morn ? Math.round(morn.sys) : 0, dia: morn ? Math.round(morn.dia) : 0 },
+    { lbl:'Abends (≥12:00)',  sys: eve  ? Math.round(eve.sys)  : 0, dia: eve  ? Math.round(eve.dia)  : 0 }
+  ];
+  const maxRaw = Math.max(140, ...groups.map(g => Math.max(g.sys, g.dia)));
+  const yMax = Math.ceil(maxRaw / 20) * 20;
+  const yPos = v => cB - (v / yMax) * cH;
+  /* Gridlines */
+  doc.setDrawColor(195,195,195); doc.setLineWidth(0.1);
+  doc.setFontSize(6); doc.setTextColor(110);
+  for(let v = 0; v <= yMax; v += 20){
+    const y = yPos(v);
+    doc.line(cL, y, cR, y);
+    if(v > 0) doc.text(String(v), cL - 1.5, y + 1, { align:'right' });
+  }
+  /* Achsen */
+  doc.setDrawColor(60); doc.setLineWidth(0.25);
+  doc.line(cL, cT, cL, cB);
+  doc.line(cL, cB, cR, cB);
+  /* Balken: 2 Gruppen mit je Sys+Dia, Innenabstand 1mm */
+  const groupW = cW / groups.length;
+  const innerGap = 1;
+  const barW = (groupW - 12) / 2;   /* je 2 Balken pro Gruppe, Außenrand 6mm */
+  groups.forEach((g, gi) => {
+    const groupCx = cL + groupW * gi + groupW / 2;
+    const sysX = groupCx - barW - innerGap / 2;
+    const diaX = groupCx + innerGap / 2;
+    if(g.sys > 0){
+      const sy = yPos(g.sys);
+      doc.setFillColor(21,101,192); doc.rect(sysX, sy, barW, cB - sy, 'F');
+      doc.setFontSize(7); doc.setTextColor(40);
+      doc.text(String(g.sys), sysX + barW/2, sy - 0.6, { align:'center' });
+    }
+    if(g.dia > 0){
+      const dy = yPos(g.dia);
+      doc.setFillColor(144,202,249); doc.rect(diaX, dy, barW, cB - dy, 'F');
+      doc.setFontSize(7); doc.setTextColor(40);
+      doc.text(String(g.dia), diaX + barW/2, dy - 0.6, { align:'center' });
+    }
+    doc.setFontSize(7); doc.setTextColor(60);
+    doc.text(g.lbl, groupCx, cB + 3.5, { align:'center' });
+  });
+  /* Rahmen */
+  doc.setDrawColor(120); doc.setLineWidth(0.15);
+  doc.rect(cL, cT, cW, cH);
+  /* Legende */
+  const legY = oy + oh - 4;
+  doc.setFillColor(21,101,192);  doc.rect(cL, legY, 3, 1.5, 'F');
+  doc.setFontSize(7); doc.setTextColor(60);
+  doc.text('Sys Ø', cL + 4, legY + 1.4);
+  doc.setFillColor(144,202,249); doc.rect(cL + 18, legY, 3, 1.5, 'F');
+  doc.text('Dia Ø', cL + 22, legY + 1.4);
 }
 
 /* ============================================================
@@ -2796,6 +3297,23 @@ document.getElementById('btn-sync-top').addEventListener('click', openSync);
     const s5svc = OmronBleManager._filterVendorService([fakeOther, altVendor]);
     console.assert(s5svc === altVendor, 'Test S5: Alt-Variante ecbe3982-… muss als Vendor-Service erkannt werden.');
 
+    /* Test T1 — calcLinearTrend([1,2,3,4,5]).slope ≈ 1.0 */
+    const t1 = calcLinearTrend([1,2,3,4,5]);
+    console.assert(Math.abs(t1.slope - 1) < 1e-9 && t1.trendData.length === 5,
+      'Test T1: calcLinearTrend([1..5]).slope soll 1.0 sein, ist '+t1.slope);
+
+    /* Test T2 — calcLinearTrend mit fallender Reihe → negativer Slope */
+    const t2 = calcLinearTrend([10,8,6,4,2]);
+    console.assert(t2.slope < 0,
+      'Test T2: calcLinearTrend([10..2]).slope muss negativ sein, ist '+t2.slope);
+
+    /* Test T3 — trendLabel-Schwellwerte */
+    const tlUp   = trendLabel(1.5,'mmHg');
+    const tlDown = trendLabel(-1.5,'mmHg');
+    const tlFlat = trendLabel(0.1,'mmHg');
+    console.assert(tlUp.text.startsWith('↑') && tlDown.text.startsWith('↓') && tlFlat.text.startsWith('→'),
+      'Test T3: trendLabel-Pfeile (steigend/sinkend/stabil) falsch.');
+
     /* Tests RX1-RX4 — RX-Char-Routing (FE4A-Protokoll) */
 
     /* Test RX1 — UUID_RX[0] ist 49123040-… */
@@ -2904,7 +3422,7 @@ document.getElementById('btn-sync-top').addEventListener('click', openSync);
       console.assert(r5 === 'echo-bypass' && omronIsPaired === true, 'Test P5: Echo-Bypass erwartet, bekommen: '+r5);
 
       omronIsPaired = false;   /* Production-Zustand: nach Tests immer false */
-      console.log('✓ Alle 28 Selbsttests bestanden (Bit-Extraktion, XOR, Duplikat, Leer-Record, PWA-Manifest, P1a Filter, P1b getPrimaryServices, P2 Unlock, P3 Pair-Flow, P4 Timeout, P5 Echo-Bypass, S1 Leere-Service-Liste, S2 Vendor-UUID-Match, S3 Fehlende-UUID-Liste, S4 Transfer-Modus-Diagnose, S5 Alt-Vendor-UUID, S6 Kein-GPS-Retry, S7 hint-normal-Text, R1 Disconnect-vor-Connect, R2 Retry-max-2, R3 Chrome-Hinweis, L1 copyLog, L2 fallbackCopy, L3 Kopiert-Feedback, RX1 UUID-49123040, RX2 connect-subscribt-RX0, RX3 RX-löst-Unlock-Pending, RX4 Read-Fallback-auf-RX).');
+      console.log('✓ Alle 31 Selbsttests bestanden (Bit-Extraktion, XOR, Duplikat, Leer-Record, PWA-Manifest, P1a Filter, P1b getPrimaryServices, P2 Unlock, P3 Pair-Flow, P4 Timeout, P5 Echo-Bypass, S1 Leere-Service-Liste, S2 Vendor-UUID-Match, S3 Fehlende-UUID-Liste, S4 Transfer-Modus-Diagnose, S5 Alt-Vendor-UUID, S6 Kein-GPS-Retry, S7 hint-normal-Text, R1 Disconnect-vor-Connect, R2 Retry-max-2, R3 Chrome-Hinweis, L1 copyLog, L2 fallbackCopy, L3 Kopiert-Feedback, RX1 UUID-49123040, RX2 connect-subscribt-RX0, RX3 RX-löst-Unlock-Pending, RX4 Read-Fallback-auf-RX, T1 LinearTrend-Slope, T2 LinearTrend-Negativ, T3 TrendLabel-Pfeile).');
     })();
   }catch(e){ console.error('Selbsttest-Fehler:', e); }
 })();
