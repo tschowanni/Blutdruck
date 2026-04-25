@@ -338,7 +338,11 @@
 
   .stat-tile{background:var(--surface);border-radius:var(--radius);padding:12px 14px;box-shadow:var(--shadow-1);position:relative;overflow:hidden;display:flex;flex-direction:column;justify-content:space-between;min-height:90px}
   .stat-tile .l{font-size:.72rem;font-weight:700;color:var(--text-2)}
-  .stat-tile .v{font-size:clamp(1.4rem,2.6vw,2rem);margin-top:6px;font-weight:700;letter-spacing:-.2px;color:var(--primary);line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  /* MEDIZINISCHE SICHERHEITS-REGEL: Werte NIEMALS abschneiden.
+     overflow:visible + text-overflow:clip — kein Ellipsis. Wenn der Wert
+     zu lang wäre, lieber etwas kleiner anzeigen, aber NIEMALS "153/96 m…"
+     zeigen — abgeschnittene Messwerte sind ein medizinischer Fehler. */
+  .stat-tile .v{font-size:clamp(1.2rem,2.2vw,1.75rem);margin-top:6px;font-weight:700;letter-spacing:-.2px;color:var(--primary);line-height:1.1;white-space:nowrap;overflow:visible;text-overflow:clip}
   .stat-tile .v small{font-size:.78rem;color:var(--text-3);font-weight:500;margin-left:3px}
   .stat-tile .d{font-size:.72rem;color:var(--text-3);font-weight:500;margin-top:4px}
   .stat-tile.ok{border-left:3px solid var(--ok)}
@@ -1345,10 +1349,13 @@ function renderStatChartPulse(data){
 function css(v){ return getComputedStyle(document.body).getPropertyValue(v).trim() || '#1565c0'; }
 
 /* datalabels-Plugin global registrieren (sobald CDN geladen).
-   In chartOptions() wird datalabels per Default deaktiviert; einzelne
-   Charts (Bar) aktivieren es explizit über opts.options.plugins.datalabels. */
+   Default für ALLE Charts: datalabels aus. Bar-Charts überschreiben
+   das in ihrer eigenen options.plugins.datalabels-Config. */
 if(typeof ChartDataLabels !== 'undefined' && typeof Chart !== 'undefined'){
-  try{ Chart.register(ChartDataLabels); }catch(e){ console.warn('ChartDataLabels-Registrierung:', e); }
+  try{
+    Chart.register(ChartDataLabels);
+    Chart.defaults.set('plugins.datalabels', { display:false });
+  }catch(e){ console.warn('ChartDataLabels-Registrierung:', e); }
 }
 
 /* Lineare Regression nach Methode der kleinsten Quadrate.
@@ -2689,7 +2696,7 @@ async function generatePDF(){
   if(!data.length){ toast('Keine Daten im gewählten Zeitraum'); return; }
   toast('PDF wird erstellt …');
   const { jsPDF } = window.jspdf;
-  const doc = new jsPDF({ unit:'mm', format:'a4', compress:true });
+  const doc = new jsPDF({ unit:'mm', format:'a4', compress:true, putOnlyUsedFonts:true });
   const pageW = doc.internal.pageSize.getWidth();
   const pageH = doc.internal.pageSize.getHeight();
   const s = computeStats(data.slice().sort((a,b)=>a.ts-b.ts));
@@ -2848,82 +2855,99 @@ function hexToRgb(hex){ const m = hex.replace('#','').match(/.{2}/g); return m ?
  *  Datei (typisch <50 KB pro Chart auch bei 200 Punkten).
  * ============================================================ */
 
-/* Chart 1: Systolisch + Diastolisch über Zeit, mit ESH/WHO-Bändern */
-function _pdfChartTrend(doc, ox, oy, ow, oh, data){
-  const padL = 14, padR = 4, padT = 3, padB = 10;
-  const cL = ox + padL, cR = ox + ow - padR;
-  const cT = oy + padT, cB = oy + oh - padB;
-  const cW = cR - cL, cH = cB - cT;
-  const yMin = 50, yMax = 200;
-  const yPos = v => cB - ((Math.max(yMin, Math.min(yMax, v)) - yMin) / (yMax - yMin)) * cH;
-  const total = data.length;
-  const xPos = i => total <= 1 ? cL + cW/2 : cL + (i / (total - 1)) * cW;
-  /* ESH/WHO-Referenzbänder von oben (rot) nach unten (grün) */
-  const bands = [
-    { from:160, to:200, c:[245,210,210] },  /* Hyp 2+/3 */
-    { from:140, to:160, c:[251,225,200] },  /* Hyp 1     */
-    { from:130, to:140, c:[252,239,205] },  /* Hoch-Norm */
-    { from:120, to:130, c:[226,239,212] },  /* Normal    */
-    { from: 50, to:120, c:[214,231,210] }   /* Optimal   */
-  ];
-  bands.forEach(b => {
-    const y1 = yPos(b.to), y2 = yPos(b.from);
-    doc.setFillColor(...b.c);
-    doc.rect(cL, y1, cW, y2 - y1, 'F');
-  });
-  /* Gridlines + Y-Labels */
-  doc.setDrawColor(190,190,190); doc.setLineWidth(0.1);
-  doc.setFontSize(6); doc.setTextColor(110);
-  [60,80,100,120,140,160,180].forEach(val => {
-    const y = yPos(val);
-    doc.line(cL, y, cR, y);
-    doc.text(String(val), cL - 1.5, y + 1, { align:'right' });
-  });
-  /* Gestrichelte Grenzen 140 (sys) und 90 (dia) */
-  doc.setLineDashPattern([0.8, 0.8], 0);
-  doc.setDrawColor(220,80,80); doc.setLineWidth(0.2);
-  doc.line(cL, yPos(140), cR, yPos(140));
-  doc.line(cL, yPos(90),  cR, yPos(90));
-  doc.setLineDashPattern([], 0);
+/* Gemeinsamer Achsen/Gitter/Bänder-Renderer.
+   Liefert {yPos, xPos, bottom} für die anschliessende Daten-Zeichnung. */
+function _pdfDrawAxes(doc, left, top, width, height, minVal, maxVal, gridStep, xLabels){
+  const right  = left + width;
+  const bottom = top + height;
+  const range  = (maxVal - minVal) || 1;
+  const yPos   = v => bottom - ((Math.max(minVal, Math.min(maxVal, v)) - minVal) / range) * height;
+  const n      = Math.max((xLabels && xLabels.length) || 1, 1);
+  const xPos   = i => n <= 1 ? left + width/2 : left + (i / (n - 1)) * width;
+  /* ESH/WHO-Bänder nur für Blutdruck-typische Y-Bereiche zeichnen.
+     Farben gemäss Master-Spec — gut auf Papier unterscheidbar. */
+  if(maxVal <= 220 && minVal >= 40){
+    const bands = [
+      { from:180, to:220, c:[245,200,200] },  /* Hyp 2+ (rot)        */
+      { from:140, to:180, c:[250,215,190] },  /* Hyp 1  (orange)     */
+      { from:130, to:140, c:[250,232,180] },  /* Erhöht (gelb)       */
+      { from:120, to:130, c:[230,238,190] },  /* Normal (hellgelb)   */
+      { from: 40, to:120, c:[210,232,205] }   /* Optimal (grün)      */
+    ];
+    bands.forEach(b => {
+      const y1 = yPos(Math.min(b.to,   maxVal));
+      const y2 = yPos(Math.max(b.from, minVal));
+      if(y2 > y1){ doc.setFillColor(...b.c); doc.rect(left, y1, width, y2 - y1, 'F'); }
+    });
+  }
+  /* Gitterlinien + Y-Beschriftungen */
+  doc.setFontSize(6);
+  for(let v = Math.ceil(minVal / gridStep) * gridStep; v <= maxVal; v += gridStep){
+    const y = yPos(v);
+    doc.setDrawColor(195,195,195); doc.setLineWidth(0.1);
+    doc.line(left, y, right, y);
+    doc.setTextColor(110);
+    doc.text(String(v), left - 1.5, y + 1, { align:'right' });
+  }
   /* Achsen */
-  doc.setDrawColor(60,60,60); doc.setLineWidth(0.25);
-  doc.line(cL, cT, cL, cB);
-  doc.line(cL, cB, cR, cB);
-  /* X-Achsen-Beschriftung (Datum, max. ~7 Labels) */
-  if(total > 0){
-    const maxLbl = Math.min(total, 7);
-    const step = Math.max(1, Math.floor(total / maxLbl));
-    doc.setFontSize(6); doc.setTextColor(100);
-    for(let i=0; i<total; i+=step){
-      const x = xPos(i);
-      const d = new Date(data[i].ts);
-      const lbl = `${String(d.getDate()).padStart(2,'0')}.${String(d.getMonth()+1).padStart(2,'0')}.`;
-      doc.text(lbl, x, cB + 3.5, { align:'center' });
+  doc.setDrawColor(60); doc.setLineWidth(0.25);
+  doc.line(left, top, left, bottom);
+  doc.line(left, bottom, right, bottom);
+  /* X-Beschriftungen (max. 8 Labels gleichmässig verteilt) */
+  if(xLabels && xLabels.length){
+    const maxLbl = Math.min(xLabels.length, 8);
+    const step = Math.max(1, Math.floor(xLabels.length / maxLbl));
+    doc.setFontSize(6); doc.setTextColor(95);
+    for(let i = 0; i < xLabels.length; i++){
+      if((i % step === 0 || i === xLabels.length - 1) && xLabels[i]){
+        doc.text(xLabels[i], xPos(i), bottom + 3.5, { align:'center' });
+      }
     }
   }
-  /* Systolisch-Linie + Punkte */
+  /* Rahmen */
+  doc.setDrawColor(120); doc.setLineWidth(0.15);
+  doc.rect(left, top, width, height);
+  return { yPos, xPos, bottom, left, right, top };
+}
+
+/* Chart 1: Sys+Dia-Verlauf — mit ESH-Bändern und gestrichelten Grenzwerten */
+function _pdfChartTrend(doc, ox, oy, ow, oh, data){
+  const padL = 14, padR = 4, padT = 3, padB = 10;
+  const cL = ox + padL, cT = oy + padT;
+  const cW = ow - padL - padR, cH = oh - padT - padB;
+  const yMin = 50, yMax = 200;
+  const xLabels = data.map(m => {
+    const d = new Date(m.ts);
+    return `${String(d.getDate()).padStart(2,'0')}.${String(d.getMonth()+1).padStart(2,'0')}.`;
+  });
+  const ax = _pdfDrawAxes(doc, cL, cT, cW, cH, yMin, yMax, 20, xLabels);
+  /* Gestrichelte Grenzwerte 140 (sys) und 90 (dia) */
+  doc.setLineDashPattern([0.8, 0.8], 0);
+  doc.setDrawColor(220,80,80); doc.setLineWidth(0.2);
+  doc.line(ax.left, ax.yPos(140), ax.right, ax.yPos(140));
+  doc.line(ax.left, ax.yPos(90),  ax.right, ax.yPos(90));
+  doc.setLineDashPattern([], 0);
+  const total = data.length;
+  /* Sys-Linie + Punkte */
   doc.setDrawColor(21,101,192); doc.setLineWidth(0.4);
   for(let i=1; i<total; i++){
-    doc.line(xPos(i-1), yPos(data[i-1].sys), xPos(i), yPos(data[i].sys));
+    doc.line(ax.xPos(i-1), ax.yPos(data[i-1].sys), ax.xPos(i), ax.yPos(data[i].sys));
   }
   doc.setFillColor(21,101,192);
-  data.forEach((m, i) => doc.circle(xPos(i), yPos(m.sys), 0.5, 'F'));
-  /* Diastolisch-Linie + Punkte */
+  data.forEach((m, i) => doc.circle(ax.xPos(i), ax.yPos(m.sys), 0.5, 'F'));
+  /* Dia-Linie + Punkte */
   doc.setDrawColor(144,202,249); doc.setLineWidth(0.4);
   for(let i=1; i<total; i++){
-    doc.line(xPos(i-1), yPos(data[i-1].dia), xPos(i), yPos(data[i].dia));
+    doc.line(ax.xPos(i-1), ax.yPos(data[i-1].dia), ax.xPos(i), ax.yPos(data[i].dia));
   }
   doc.setFillColor(144,202,249);
-  data.forEach((m, i) => doc.circle(xPos(i), yPos(m.dia), 0.5, 'F'));
-  /* Rahmen */
-  doc.setDrawColor(120,120,120); doc.setLineWidth(0.15);
-  doc.rect(cL, cT, cW, cH);
-  /* Legende unter dem Chart */
+  data.forEach((m, i) => doc.circle(ax.xPos(i), ax.yPos(m.dia), 0.5, 'F'));
+  /* Legende */
   const legY = oy + oh - 4;
-  doc.setFillColor(21,101,192);     doc.rect(cL, legY, 3, 1.5, 'F');
+  doc.setFillColor(21,101,192);  doc.rect(cL, legY, 3, 1.5, 'F');
   doc.setFontSize(7); doc.setTextColor(60);
   doc.text('Systolisch', cL + 4, legY + 1.4);
-  doc.setFillColor(144,202,249);    doc.rect(cL + 26, legY, 3, 1.5, 'F');
+  doc.setFillColor(144,202,249); doc.rect(cL + 26, legY, 3, 1.5, 'F');
   doc.text('Diastolisch', cL + 30, legY + 1.4);
   doc.setLineDashPattern([0.8,0.8], 0);
   doc.setDrawColor(220,80,80); doc.setLineWidth(0.3);
@@ -2933,56 +2957,31 @@ function _pdfChartTrend(doc, ox, oy, ow, oh, data){
   doc.text('Grenze 140 / 90', cL + 61, legY + 1.4);
 }
 
-/* Chart 2: Puls über Zeit (rot, mit auto-skalierter Y-Achse) */
+/* Chart 2: Puls-Verlauf — auto-skalierte Y-Achse, rote Linie */
 function _pdfChartPulse(doc, ox, oy, ow, oh, data){
   const padL = 14, padR = 4, padT = 3, padB = 10;
-  const cL = ox + padL, cR = ox + ow - padR;
-  const cT = oy + padT, cB = oy + oh - padB;
-  const cW = cR - cL, cH = cB - cT;
+  const cL = ox + padL, cT = oy + padT;
+  const cW = ow - padL - padR, cH = oh - padT - padB;
   const total = data.length;
-  /* Auto-Y-Skala */
+  /* Auto-Y-Skala (außerhalb des ESH-Band-Bereichs, daher keine Bänder) */
   let pMin = 999, pMax = 0;
   data.forEach(m => { if(m.pul < pMin) pMin = m.pul; if(m.pul > pMax) pMax = m.pul; });
   if(!isFinite(pMin) || pMax === 0){ pMin = 50; pMax = 100; }
-  const yMin = Math.max(40, Math.floor((pMin - 5) / 10) * 10);
-  const yMax = Math.min(200, Math.ceil((pMax + 5) / 10) * 10);
-  const yRange = (yMax - yMin) || 10;
-  const yPos = v => cB - ((Math.max(yMin, Math.min(yMax, v)) - yMin) / yRange) * cH;
-  const xPos = i => total <= 1 ? cL + cW/2 : cL + (i / (total - 1)) * cW;
-  /* Gridlines */
-  doc.setDrawColor(195,195,195); doc.setLineWidth(0.1);
-  doc.setFontSize(6); doc.setTextColor(110);
-  for(let v = yMin; v <= yMax; v += 10){
-    const y = yPos(v);
-    doc.line(cL, y, cR, y);
-    doc.text(String(v), cL - 1.5, y + 1, { align:'right' });
-  }
-  /* Achsen */
-  doc.setDrawColor(60); doc.setLineWidth(0.25);
-  doc.line(cL, cT, cL, cB);
-  doc.line(cL, cB, cR, cB);
-  /* X-Beschriftungen */
-  if(total > 0){
-    const maxLbl = Math.min(total, 7);
-    const step = Math.max(1, Math.floor(total / maxLbl));
-    doc.setFontSize(6); doc.setTextColor(100);
-    for(let i=0; i<total; i+=step){
-      const x = xPos(i);
-      const d = new Date(data[i].ts);
-      const lbl = `${String(d.getDate()).padStart(2,'0')}.${String(d.getMonth()+1).padStart(2,'0')}.`;
-      doc.text(lbl, x, cB + 3.5, { align:'center' });
-    }
-  }
-  /* Puls-Linie + Punkte (rot) */
+  const yMin = Math.max(30, Math.floor((pMin - 5) / 10) * 10);
+  const yMax = Math.ceil((pMax + 5) / 10) * 10;
+  const xLabels = data.map(m => {
+    const d = new Date(m.ts);
+    return `${String(d.getDate()).padStart(2,'0')}.${String(d.getMonth()+1).padStart(2,'0')}.`;
+  });
+  /* yMin <40 verhindert ESH-Band-Zeichnung (Helper-Logik) */
+  const ax = _pdfDrawAxes(doc, cL, cT, cW, cH, yMin, yMax, 10, xLabels);
+  /* Puls-Linie + Punkte */
   doc.setDrawColor(198,40,40); doc.setLineWidth(0.4);
   for(let i=1; i<total; i++){
-    doc.line(xPos(i-1), yPos(data[i-1].pul), xPos(i), yPos(data[i].pul));
+    doc.line(ax.xPos(i-1), ax.yPos(data[i-1].pul), ax.xPos(i), ax.yPos(data[i].pul));
   }
   doc.setFillColor(198,40,40);
-  data.forEach((m, i) => doc.circle(xPos(i), yPos(m.pul), 0.5, 'F'));
-  /* Rahmen */
-  doc.setDrawColor(120); doc.setLineWidth(0.15);
-  doc.rect(cL, cT, cW, cH);
+  data.forEach((m, i) => doc.circle(ax.xPos(i), ax.yPos(m.pul), 0.5, 'F'));
   /* Legende */
   const legY = oy + oh - 4;
   doc.setFillColor(198,40,40); doc.rect(cL, legY, 3, 1.5, 'F');
@@ -2990,57 +2989,44 @@ function _pdfChartPulse(doc, ox, oy, ow, oh, data){
   doc.text('Puls (bpm)', cL + 4, legY + 1.4);
 }
 
-/* Chart 3: Morgens vs. Abends — gruppiertes Balkendiagramm */
+/* Chart 3: Morgens vs. Abends — Balken mit Werten innen */
 function _pdfChartMornEve(doc, ox, oy, ow, oh, morn, eve){
   const padL = 14, padR = 4, padT = 3, padB = 10;
-  const cL = ox + padL, cR = ox + ow - padR;
-  const cT = oy + padT, cB = oy + oh - padB;
-  const cW = cR - cL, cH = cB - cT;
+  const cL = ox + padL, cT = oy + padT;
+  const cW = ow - padL - padR, cH = oh - padT - padB;
   const groups = [
     { lbl:'Morgens (<12:00)', sys: morn ? Math.round(morn.sys) : 0, dia: morn ? Math.round(morn.dia) : 0 },
     { lbl:'Abends (≥12:00)',  sys: eve  ? Math.round(eve.sys)  : 0, dia: eve  ? Math.round(eve.dia)  : 0 }
   ];
   const maxRaw = Math.max(140, ...groups.map(g => Math.max(g.sys, g.dia)));
   const yMax = Math.ceil(maxRaw / 20) * 20;
-  const yPos = v => cB - (v / yMax) * cH;
-  /* Gridlines */
-  doc.setDrawColor(195,195,195); doc.setLineWidth(0.1);
-  doc.setFontSize(6); doc.setTextColor(110);
-  for(let v = 0; v <= yMax; v += 20){
-    const y = yPos(v);
-    doc.line(cL, y, cR, y);
-    if(v > 0) doc.text(String(v), cL - 1.5, y + 1, { align:'right' });
-  }
-  /* Achsen */
-  doc.setDrawColor(60); doc.setLineWidth(0.25);
-  doc.line(cL, cT, cL, cB);
-  doc.line(cL, cB, cR, cB);
-  /* Balken: 2 Gruppen mit je Sys+Dia, Innenabstand 1mm */
+  /* yMin=0 verhindert ESH-Band-Zeichnung im Helper */
+  const ax = _pdfDrawAxes(doc, cL, cT, cW, cH, 0, yMax, 20, ['','']);
+  /* Balken: 2 Gruppen mit je Sys+Dia */
   const groupW = cW / groups.length;
   const innerGap = 1;
-  const barW = (groupW - 12) / 2;   /* je 2 Balken pro Gruppe, Außenrand 6mm */
+  const barW = (groupW - 12) / 2;
   groups.forEach((g, gi) => {
     const groupCx = cL + groupW * gi + groupW / 2;
     const sysX = groupCx - barW - innerGap / 2;
     const diaX = groupCx + innerGap / 2;
     if(g.sys > 0){
-      const sy = yPos(g.sys);
-      doc.setFillColor(21,101,192); doc.rect(sysX, sy, barW, cB - sy, 'F');
-      doc.setFontSize(7); doc.setTextColor(40);
-      doc.text(String(g.sys), sysX + barW/2, sy - 0.6, { align:'center' });
+      const sy = ax.yPos(g.sys);
+      doc.setFillColor(21,101,192); doc.rect(sysX, sy, barW, ax.bottom - sy, 'F');
+      /* Wert in den Balken: weiss, fett */
+      doc.setFontSize(10); doc.setTextColor(255);
+      doc.text(String(g.sys), sysX + barW/2, (sy + ax.bottom)/2 + 1.2, { align:'center' });
     }
     if(g.dia > 0){
-      const dy = yPos(g.dia);
-      doc.setFillColor(144,202,249); doc.rect(diaX, dy, barW, cB - dy, 'F');
-      doc.setFontSize(7); doc.setTextColor(40);
-      doc.text(String(g.dia), diaX + barW/2, dy - 0.6, { align:'center' });
+      const dy = ax.yPos(g.dia);
+      doc.setFillColor(144,202,249); doc.rect(diaX, dy, barW, ax.bottom - dy, 'F');
+      /* Wert in den Balken: dunkelblau (für Lesbarkeit auf hellblau) */
+      doc.setFontSize(10); doc.setTextColor(26,58,107);
+      doc.text(String(g.dia), diaX + barW/2, (dy + ax.bottom)/2 + 1.2, { align:'center' });
     }
     doc.setFontSize(7); doc.setTextColor(60);
-    doc.text(g.lbl, groupCx, cB + 3.5, { align:'center' });
+    doc.text(g.lbl, groupCx, ax.bottom + 3.5, { align:'center' });
   });
-  /* Rahmen */
-  doc.setDrawColor(120); doc.setLineWidth(0.15);
-  doc.rect(cL, cT, cW, cH);
   /* Legende */
   const legY = oy + oh - 4;
   doc.setFillColor(21,101,192);  doc.rect(cL, legY, 3, 1.5, 'F');
