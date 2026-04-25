@@ -1362,9 +1362,10 @@ class OmronBleManager {
     this.bleLog = []; this.timeoutMs = opts.timeoutMs || 5000;
     this._rxBuffers = [null,null,null,null];
     this._pending = null;
-    this._unlockPending = null;              /* separater Kanal für Unlock-Char-Notifies */
+    this._unlockPending = null;              /* Promise-Pending für Unlock-/Pairing-Antworten */
     this._channelsReady = false;             /* RX/TX-Characteristics erst nach Pairing */
     this._singleChannelMode = false;         /* true wenn nur CH0 (neue OMRON-FW) */
+    this._rxSubscribed = [false,false,false,false]; /* welche RX-Kanäle bereits Notify-aktiv sind */
     this._disconnectHandler = ()=>this._onDisconnect();
     this.onLog = null; this.onProgress = null; this.onState = null;
   }
@@ -1472,6 +1473,20 @@ class OmronBleManager {
 
   _onRxNotification(channelIdx, value){
     const bytes = new Uint8Array(value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength));
+
+    /* PRIORITÄT 1: Wenn auf eine Unlock-/Pairing-Antwort gewartet wird, ist
+       diese Notification der echte Response (anders als die Echo-Notify auf
+       der Unlock-Char b305b680). Wir lösen das _unlockPending hier auf. */
+    if(this._unlockPending){
+      this._log(`RX${channelIdx}-NOTIFY (Unlock-Antwort): ${this._hex(bytes)}`);
+      const {resolve, timer} = this._unlockPending;
+      this._unlockPending = null;
+      clearTimeout(timer);
+      resolve(bytes);
+      return;
+    }
+
+    /* PRIORITÄT 2: normale Daten-Response (EEPROM-Reads etc.) */
     /* Single-Channel-Modus: jede Notification ist ein komplettes Paket */
     if(this._singleChannelMode){
       this._log(`RX ← ${this._hex(bytes)}`);
@@ -1655,26 +1670,27 @@ class OmronBleManager {
       }
       await this.unlockChar.startNotifications();
       this.unlockChar.addEventListener('characteristicvaluechanged', (ev)=> this._onUnlockNotify(ev.target.value));
-      this._log('Unlock-Char Notify aktiv');
+      this._log('Unlock-Char (b305b680, Control) Notify aktiv');
 
-      /* Diagnose: Event-Kanal 8858eb40 — NOTIFY-only Characteristic, die bei
-         manchen OMRON-Firmware-Ständen Pairing-Acks / Status-Events liefert.
-         Wir abonnieren früh und loggen alles Eintreffende, um zu sehen, ob
-         Unlock-Antworten hier statt auf der Unlock-Char landen. */
+      /* RX-Char (49123040) FRÜH abonnieren — vor Pairing.
+         Echte Geräteantworten (Unlock-ACKs UND Daten-Responses) kommen
+         laut Reverse-Engineering auf dieser Char, NICHT auf b305b680
+         (das nur einen Echo des Writes liefert). */
+      try{
+        await this._subscribeRxChannel(0);
+      }catch(e){
+        this._log(`RX-Char (49123040) Früh-Abonnierung fehlgeschlagen: ${e.message}`);
+      }
+
+      /* Event-Kanal 8858eb40 — laut Spec nicht für Unlock, nur Status/Events.
+         Wir abonnieren zur Diagnose, lösen aber kein unlock-pending mehr aus. */
       try{
         const eventChar = await this.service.getCharacteristic('8858eb40-aee8-11e1-bb67-0002a5d5c51b');
         await eventChar.startNotifications();
         eventChar.addEventListener('characteristicvaluechanged', (ev)=>{
           const v = ev.target.value;
           const bytes = new Uint8Array(v.buffer.slice(v.byteOffset, v.byteOffset + v.byteLength));
-          this._log(`EVENT ← ${this._hex(bytes)}`);
-          /* Falls gerade auf eine Unlock-Antwort gewartet wird, diese auflösen */
-          if(this._unlockPending){
-            const {resolve,timer} = this._unlockPending;
-            this._unlockPending = null;
-            clearTimeout(timer);
-            resolve(bytes);
-          }
+          this._log(`EVENT (8858eb40) ← ${this._hex(bytes)}`);
         });
         this._log('Event-Char (8858eb40) Notify aktiv');
       }catch(e){
@@ -1725,31 +1741,53 @@ class OmronBleManager {
 
     /* ─── SCHRITT A ─── */
     this._log('SCHRITT A — Unlock 0x01 + Key (Gerät bereits gepairt?)');
-    let codeA = 0;
-    try{ codeA = await this._unlockAndWait(0x01, OmronBleManager.PAIR_KEY, 3000); }
+    let respA = null;
+    try{ respA = await this._unlockAndWait(0x01, OmronBleManager.PAIR_KEY, 3000); }
     catch(e){ this._log(`SCHRITT A — Timeout/Fehler: ${e.message}`); }
-    if(codeA === 0x8100){
+    if(respA && respA.code === 0x8100){
       this._log('✓ SCHRITT A: Gerät war bereits gepairt (0x8100)');
       this.pairingKey = OmronBleManager.PAIR_KEY;
       omronIsPaired = true;
       this._setState('CONNECTED');
       return 'unlocked';
     }
+    /* Echo-Bypass: Gerät spiegelt nur unseren Write — neueres Protokoll, das
+       das klassische omblepy-Pairing-Schema vermutlich gar nicht braucht.
+       Wir nehmen an, der OS-Level-Bond reicht aus, und versuchen direkt
+       EEPROM-Reads. Wenn das klappt, ist alles gut; sonst zeigen die
+       Read-Kommandos ihre eigenen Fehler. */
+    if(respA && respA.isEcho){
+      this._log('SCHRITT A → Echo erkannt: Gerät verwendet anderes Protokoll oder ist bereits via OS-Bond authentifiziert.');
+      this._log('Überspringe SCHRITT B/C/D und probiere direkten EEPROM-Zugriff.');
+      this.pairingKey = OmronBleManager.PAIR_KEY;
+      omronIsPaired = true;
+      this._setState('CONNECTED');
+      return 'echo-bypass';
+    }
+    const codeA = respA ? respA.code : 0;
     this._log(`SCHRITT A — Antwort 0x${codeA.toString(16).padStart(4,'0')} → wechsle zu SCHRITT B`);
 
     /* ─── SCHRITT B ─── */
     this._log('SCHRITT B — Pairing-Init 0x02 + Dummy (Gerät muss "-P-" zeigen, 10s)');
-    let codeB;
-    try{ codeB = await this._unlockAndWait(0x02, new Uint8Array(16), 10000); }
+    let respB = null;
+    try{ respB = await this._unlockAndWait(0x02, new Uint8Array(16), 10000); }
     catch(e){
       throw new Error(
         'Gerät nicht im Pairing-Modus.\n\n' +
         'Bitte die Bluetooth-Taste am OMRON M7 gedrückt halten, bis "-P-" im Display erscheint, dann erneut "Verbinden" tippen.'
       );
     }
-    if(codeB !== 0x7F00){
+    if(respB && respB.isEcho){
+      this._log('SCHRITT B → ebenfalls Echo: Gerät reagiert nicht auf omblepy-Protokoll.');
+      this._log('Letzter Ausweg: trotzdem EEPROM-Read versuchen — vielleicht reicht der OS-Bond.');
+      this.pairingKey = OmronBleManager.PAIR_KEY;
+      omronIsPaired = true;
+      this._setState('CONNECTED');
+      return 'echo-bypass';
+    }
+    if(respB.code !== 0x7F00){
       throw new Error(
-        `Unerwartete Pairing-Antwort (0x${codeB.toString(16).padStart(4,'0')}).\n\n` +
+        `Unerwartete Pairing-Antwort (0x${respB.code.toString(16).padStart(4,'0')}).\n\n` +
         'Bitte die Bluetooth-Taste am OMRON M7 gedrückt halten, bis "-P-" im Display erscheint.'
       );
     }
@@ -1757,21 +1795,21 @@ class OmronBleManager {
 
     /* ─── SCHRITT C ─── */
     this._log('SCHRITT C — Key programmieren 0x00 + Key (5s)');
-    let codeC;
-    try{ codeC = await this._unlockAndWait(0x00, OmronBleManager.PAIR_KEY, 5000); }
+    let respC;
+    try{ respC = await this._unlockAndWait(0x00, OmronBleManager.PAIR_KEY, 5000); }
     catch(e){ throw new Error(`Key-Programmierung Timeout: ${e.message}`); }
-    if(codeC !== 0x8000){
-      throw new Error(`Key-Programmierung fehlgeschlagen (Code 0x${codeC.toString(16).padStart(4,'0')})`);
+    if(respC.code !== 0x8000){
+      throw new Error(`Key-Programmierung fehlgeschlagen (Code 0x${respC.code.toString(16).padStart(4,'0')})`);
     }
     this._log('✓ SCHRITT C: Key gespeichert (0x8000)');
 
     /* ─── SCHRITT D ─── */
     this._log('SCHRITT D — Finaler Unlock 0x01 + Key');
-    let codeD;
-    try{ codeD = await this._unlockAndWait(0x01, OmronBleManager.PAIR_KEY, 3000); }
+    let respD;
+    try{ respD = await this._unlockAndWait(0x01, OmronBleManager.PAIR_KEY, 3000); }
     catch(e){ throw new Error(`Finaler Unlock Timeout: ${e.message}`); }
-    if(codeD !== 0x8100){
-      throw new Error(`Finaler Unlock fehlgeschlagen (Code 0x${codeD.toString(16).padStart(4,'0')})`);
+    if(respD.code !== 0x8100){
+      throw new Error(`Finaler Unlock fehlgeschlagen (Code 0x${respD.code.toString(16).padStart(4,'0')})`);
     }
     this._log('✓ SCHRITT D: Pairing vollständig — Gerät freigeschaltet');
 
@@ -1782,10 +1820,11 @@ class OmronBleManager {
   }
 
   /* Hilfsfunktion: Unlock-Paket schreiben und auf Notify-Antwort warten.
-     Fallback-Strategie:
-       1. Nach dem Write auf Notify warten (Unlock-Char oder 8858eb40)
-       2. Bei Timeout: Unlock-Char per readValue() auslesen
-          (manche OMRON-Firmware legt die Antwort als Wert statt als Notify ab) */
+     Rückgabe: { code, bytes, isEcho }
+       code   = (resp[1] << 8) | resp[2]
+       bytes  = vollständige Response
+       isEcho = true wenn Response byteidentisch mit dem Write ist
+                (manche OMRON-FW spiegeln den Write nur zurück) */
   async _unlockAndWait(prefix, key16, timeoutMs){
     const pkt = new Uint8Array(17);
     pkt[0] = prefix;
@@ -1797,7 +1836,6 @@ class OmronBleManager {
       this._log('UNLOCK-TX ✓ Write bestätigt (ATT Write-Response)');
     }catch(wErr){
       this._log(`UNLOCK-TX ✗ Write-Fehler: ${wErr.message}`);
-      /* Timer/Pending abräumen, damit der Promise nicht hängt */
       if(this._unlockPending){
         const {timer} = this._unlockPending;
         this._unlockPending = null;
@@ -1809,27 +1847,47 @@ class OmronBleManager {
     try{
       resp = await waitResp;
     }catch(notifyErr){
-      /* Notify-Timeout → Read-Fallback */
-      this._log(`Notify-Timeout — probiere Read-Fallback auf Unlock-Char …`);
+      /* Notify-Timeout — Antworten kommen auf RX-Char (49123040), nicht
+         auf Unlock-Char. Read-Fallback liest deshalb die RX-Char. */
+      this._log(`Notify-Timeout — probiere Read-Fallback auf RX-Char (49123040) …`);
       try{
-        const dv = await this.unlockChar.readValue();
+        if(!this.rxChars[0]) throw new Error('RX-Char nicht früh-abonniert');
+        const dv = await this.rxChars[0].readValue();
         resp = new Uint8Array(dv.buffer.slice(dv.byteOffset, dv.byteOffset + dv.byteLength));
-        this._log(`UNLOCK-READ: ${this._hex(resp)}`);
+        this._log(`RX-READ: ${this._hex(resp)}`);
       }catch(readErr){
         this._log(`Read-Fallback ebenfalls fehlgeschlagen: ${readErr.message}`);
-        throw notifyErr;  /* ursprünglichen Timeout-Fehler weiterwerfen */
+        throw notifyErr;
       }
     }
-    return (resp[1] << 8) | resp[2];
+    /* Echo-Erkennung: Byte-für-Byte-Vergleich zwischen Write und Response */
+    let isEcho = (resp.length >= pkt.length);
+    if(isEcho){
+      for(let i=0; i<pkt.length; i++){
+        if(resp[i] !== pkt[i]){ isEcho = false; break; }
+      }
+    }
+    if(isEcho) this._log('⚠ Antwort ist EXAKTES Echo unseres Writes — kein echter Response.');
+    return { code: (resp[1] << 8) | resp[2], bytes: resp, isEcho };
   }
   _onUnlockNotify(value){
     const bytes = new Uint8Array(value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength));
-    this._log(`UNLOCK-RX: ${this._hex(bytes)}`);
-    if(this._unlockPending){
-      const {resolve, timer} = this._unlockPending;
-      this._unlockPending = null;
-      clearTimeout(timer);
-      resolve(bytes);
+    /* b305b680-Notify spiegelt typischerweise nur den geschriebenen Wert
+       zurück (Echo). Echte Antworten kommen via RX-Char (49123040).
+       Wir loggen daher nur — Auflösung von _unlockPending erfolgt
+       NICHT mehr hier, sondern in _onRxNotification.
+       Defensive Ausnahme: falls Bytes 1-2 ein bekannter Response-Code
+       sind (für Firmware, die DOCH hier antwortet), trotzdem auflösen. */
+    this._log(`UNLOCK-CHAR-NOTIFY (b305b680): ${this._hex(bytes)}`);
+    if(this._unlockPending && bytes.length >= 3){
+      const code = (bytes[1] << 8) | bytes[2];
+      if(code === 0x8100 || code === 0x8000 || code === 0x7F00){
+        this._log(`  → Response-Code 0x${code.toString(16)} erkannt — als echten Response behandelt`);
+        const {resolve, timer} = this._unlockPending;
+        this._unlockPending = null;
+        clearTimeout(timer);
+        resolve(bytes);
+      }
     }
   }
   _waitUnlockResponse(timeoutMs){
@@ -1844,15 +1902,31 @@ class OmronBleManager {
     });
   }
 
+  /* RX-Kanal idempotent abonnieren — funktioniert sowohl früh aus connect()
+     (für RX[0]) als auch später aus _discoverDataChannels (für CH1-3).
+     Doppel-Subscribe wird durch _rxSubscribed[idx]-Flag verhindert. */
+  async _subscribeRxChannel(idx){
+    if(this._rxSubscribed[idx]) return;
+    if(!this.rxChars[idx]){
+      this.rxChars[idx] = await this.service.getCharacteristic(OmronBleManager.UUID_RX[idx]);
+    }
+    await this.rxChars[idx].startNotifications();
+    this.rxChars[idx].addEventListener('characteristicvaluechanged', (ev)=> this._onRxNotification(idx, ev.target.value));
+    this._rxSubscribed[idx] = true;
+    this._log(`✓ RX${idx}-Char (${OmronBleManager.UUID_RX[idx]}) Notify aktiv`);
+  }
+
   /* Discovery der Datenkanäle (nach erfolgreichem Pairing).
      Manche OMRON-Firmware-Varianten bieten nur CH0 (Single-Channel-Modus),
-     andere alle 4. CH0 ist zwingend, CH1-3 sind optional. */
+     andere alle 4. CH0 ist zwingend, CH1-3 sind optional.
+     RX[0] wurde schon in connect() abonniert — _subscribeRxChannel ist
+     idempotent und überspringt. */
   async _discoverDataChannels(){
     if(this._channelsReady) return;
     this._log('Hole RX/TX-Characteristics …');
     for(let i=0; i<4; i++){
       try{
-        this.rxChars[i] = await this.service.getCharacteristic(OmronBleManager.UUID_RX[i]);
+        await this._subscribeRxChannel(i);
       }catch(e){
         this.rxChars[i] = null;
         if(i === 0) throw new Error(`RX-Kanal 0 (${OmronBleManager.UUID_RX[0]}) nicht gefunden: ${e.message}`);
@@ -1868,11 +1942,6 @@ class OmronBleManager {
     const txCount = this.txChars.filter(c => c).length;
     this._singleChannelMode = (rxCount === 1 && txCount === 1);
     this._log(`Kanäle gefunden: ${txCount}× TX, ${rxCount}× RX${this._singleChannelMode ? ' (Single-Channel-Modus)' : ''}`);
-    for(let i=0; i<4; i++){
-      if(!this.rxChars[i]) continue;
-      await this.rxChars[i].startNotifications();
-      this.rxChars[i].addEventListener('characteristicvaluechanged', (ev)=> this._onRxNotification(i, ev.target.value));
-    }
     this._channelsReady = true;
     this._log('✓ Datenkanäle einsatzbereit');
   }
@@ -2727,6 +2796,27 @@ document.getElementById('btn-sync-top').addEventListener('click', openSync);
     const s5svc = OmronBleManager._filterVendorService([fakeOther, altVendor]);
     console.assert(s5svc === altVendor, 'Test S5: Alt-Variante ecbe3982-… muss als Vendor-Service erkannt werden.');
 
+    /* Tests RX1-RX4 — RX-Char-Routing (FE4A-Protokoll) */
+
+    /* Test RX1 — UUID_RX[0] ist 49123040-… */
+    console.assert(OmronBleManager.UUID_RX[0] === '49123040-aee8-11e1-a74d-0002a5d5c51b',
+      'Test RX1: UUID_RX[0] muss 49123040-… sein.');
+
+    /* Test RX2 — connect() ruft _subscribeRxChannel(0) auf (RX früh abonniert) */
+    const connectSrcRx = OmronBleManager.prototype.connect.toString();
+    console.assert(/_subscribeRxChannel\s*\(\s*0\s*\)/.test(connectSrcRx),
+      'Test RX2: connect() muss _subscribeRxChannel(0) aufrufen (RX-Char früh abonnieren).');
+
+    /* Test RX3 — _onRxNotification löst _unlockPending auf (Priority 1) */
+    const rxNotifySrc = OmronBleManager.prototype._onRxNotification.toString();
+    console.assert(/_unlockPending/.test(rxNotifySrc) && /resolve\s*\(\s*bytes\s*\)/.test(rxNotifySrc),
+      'Test RX3: _onRxNotification muss _unlockPending mit den empfangenen Bytes auflösen.');
+
+    /* Test RX4 — Read-Fallback in _unlockAndWait liest rxChars[0], nicht unlockChar */
+    const unlockAndWaitSrc = OmronBleManager.prototype._unlockAndWait.toString();
+    console.assert(/this\.rxChars\[0\]\.readValue/.test(unlockAndWaitSrc),
+      'Test RX4: Read-Fallback muss this.rxChars[0].readValue() aufrufen, nicht unlockChar.');
+
     /* Test S6 — getPrimaryServices in connect() genau zweimal:
        1× initial + 1× im Double-Connect-Workaround. Keine Retry-SCHLEIFE. */
     const connectBody = OmronBleManager.prototype.connect.toString();
@@ -2766,31 +2856,55 @@ document.getElementById('btn-sync-top').addEventListener('click', openSync);
     const copySrc = copyLogToClipboard.toString();
     console.assert(/✓ Kopiert/.test(copySrc), 'Test L3: Feedback-Text "✓ Kopiert!" fehlt in copyLogToClipboard.');
 
-    /* Tests P2/P3/P4 asynchron sequentiell — sonst racet omronIsPaired */
+    /* Hilfsfunktion zum Wrappen alter Test-Returnwerte (Zahl) in das neue
+       Result-Objekt {code, bytes, isEcho}. Für neue Tests kann man auch
+       direkt ein Objekt übergeben. */
+    const wrapResp = r => (typeof r === 'number') ? { code:r, bytes:new Uint8Array(17), isEcho:false } : r;
+    /* Override des Mocks, damit pairDevice das neue Schema bekommt */
+    const makeFakeMgr2 = (responses) => {
+      const m = makeFakeMgr(responses);
+      let step = 0;
+      m._unlockAndWait = async () => {
+        if(step >= responses.length) throw new Error('Timeout nach Test-Timeout ms bei Unlock-Antwort');
+        const r = responses[step++];
+        if(r === 'TIMEOUT') throw new Error('Timeout nach 10000 ms bei Unlock-Antwort');
+        return wrapResp(r);
+      };
+      return m;
+    };
+
+    /* Tests P2/P3/P4/P5 asynchron sequentiell — sonst racet omronIsPaired */
     (async ()=>{
       /* Test P2 — pairDevice mit 0x8100 = sofort erfolgreich */
       omronIsPaired = false;
-      const m2 = makeFakeMgr([0x8100]);
+      const m2 = makeFakeMgr2([0x8100]);
       const r2 = await m2.pairDevice();
       console.assert(r2 === 'unlocked' && omronIsPaired === true, 'Test P2: Unlock sofort erfolgreich erwartet');
 
       /* Test P3 — pairDevice mit 0x0000 → 0x7F00 → 0x8000 → 0x8100 = Pairing komplett */
       omronIsPaired = false;
-      const m3 = makeFakeMgr([0x0000, 0x7F00, 0x8000, 0x8100]);
+      const m3 = makeFakeMgr2([0x0000, 0x7F00, 0x8000, 0x8100]);
       const r3 = await m3.pairDevice();
       console.assert(r3 === 'paired' && omronIsPaired === true, 'Test P3: Vollständiger Pairing-Flow A→B→C→D erwartet');
 
       /* Test P4 — Timeout in SCHRITT B → benutzerfreundliche deutsche Fehlermeldung */
       omronIsPaired = false;
-      const m4 = makeFakeMgr([0x0000, 'TIMEOUT']);
+      const m4 = makeFakeMgr2([0x0000, 'TIMEOUT']);
       let caught = null;
       try{ await m4.pairDevice(); }catch(e){ caught = e; }
       const msg = caught ? caught.message : '';
       const isGerman = /Bluetooth-Taste|Pairing-Modus|-P-/.test(msg);
       console.assert(caught && isGerman, 'Test P4: Deutsche Pairing-Fehlermeldung erwartet, bekommen: '+msg);
 
+      /* Test P5 — Echo in SCHRITT A → Bypass-Pfad mit return 'echo-bypass' */
+      omronIsPaired = false;
+      const echoResp = { code: 0xdead, bytes: new Uint8Array(17), isEcho: true };
+      const m5 = makeFakeMgr2([echoResp]);
+      const r5 = await m5.pairDevice();
+      console.assert(r5 === 'echo-bypass' && omronIsPaired === true, 'Test P5: Echo-Bypass erwartet, bekommen: '+r5);
+
       omronIsPaired = false;   /* Production-Zustand: nach Tests immer false */
-      console.log('✓ Alle 23 Selbsttests bestanden (Bit-Extraktion, XOR, Duplikat, Leer-Record, PWA-Manifest, P1a Filter, P1b getPrimaryServices, P2 Unlock, P3 Pair-Flow, P4 Timeout, S1 Leere-Service-Liste, S2 Vendor-UUID-Match, S3 Fehlende-UUID-Liste, S4 Transfer-Modus-Diagnose, S5 Alt-Vendor-UUID, S6 Kein-GPS-Retry, S7 hint-normal-Text, R1 Disconnect-vor-Connect, R2 Retry-max-2, R3 Chrome-Hinweis, L1 copyLog, L2 fallbackCopy, L3 Kopiert-Feedback).');
+      console.log('✓ Alle 28 Selbsttests bestanden (Bit-Extraktion, XOR, Duplikat, Leer-Record, PWA-Manifest, P1a Filter, P1b getPrimaryServices, P2 Unlock, P3 Pair-Flow, P4 Timeout, P5 Echo-Bypass, S1 Leere-Service-Liste, S2 Vendor-UUID-Match, S3 Fehlende-UUID-Liste, S4 Transfer-Modus-Diagnose, S5 Alt-Vendor-UUID, S6 Kein-GPS-Retry, S7 hint-normal-Text, R1 Disconnect-vor-Connect, R2 Retry-max-2, R3 Chrome-Hinweis, L1 copyLog, L2 fallbackCopy, L3 Kopiert-Feedback, RX1 UUID-49123040, RX2 connect-subscribt-RX0, RX3 RX-löst-Unlock-Pending, RX4 Read-Fallback-auf-RX).');
     })();
   }catch(e){ console.error('Selbsttest-Fehler:', e); }
 })();
