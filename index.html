@@ -86,7 +86,7 @@
        • CDN-Libs   ⇒ CACHE-FIRST (statische Versions-URLs ändern sich nie)
      Cache-Name bumped auf v3 nach Bug-Fix für Notify-Hang. */
   const swCode = [
-    "const CACHE_NAME = 'omron-bp-v5';",
+    "const CACHE_NAME = 'omron-bp-v6';",
     "const CACHE_URLS = [",
     "  './',",
     "  './index.html',",
@@ -738,7 +738,7 @@
       </svg>
       <p style="margin:0 0 4px;font-weight:600;color:var(--text);font-size:.94rem">OMRON M7 Blutdruck</p>
       <p style="margin:0 0 8px">für OMRON M7 Intelli IT (HEM-7361T).<br>Läuft lokal &mdash; alle Daten bleiben auf diesem Gerät.<br><span id="pwa-status" style="color:var(--text-3);font-size:.75rem"></span></p>
-      <p style="margin:0;color:var(--text-3);font-size:.75rem">Version 2.1-fix5 · Build 2026-05-11-c · <span id="storage-info">—</span></p>
+      <p style="margin:0;color:var(--text-3);font-size:.75rem">Version 2.1-fix6 · Build 2026-05-11-d · <span id="storage-info">—</span></p>
       <p style="margin:6px 0 0;font-size:.7rem">
         <button id="btn-force-refresh" style="background:none;border:1px solid var(--text-3);color:var(--text-3);padding:4px 10px;border-radius:6px;cursor:pointer;font-size:.7rem">⟳ App-Cache leeren &amp; neu laden</button>
       </p>
@@ -1553,7 +1553,16 @@ class OmronBleManager {
   _setState(s){ this.state = s; this._log(`STATE → ${s}`); if(this.onState) this.onState(s); }
   _log(m){ const e = `[${new Date().toTimeString().slice(0,8)}] ${m}`; this.bleLog.push(e); if(this.onLog) this.onLog(e); }
   _progress(p){ if(this.onProgress) this.onProgress(p); }
-  _hex(bytes){ return Array.from(bytes).map(b=>b.toString(16).padStart(2,'0')).join(' '); }
+  _hex(bytes){
+    /* Verhindert App-Crash bei sehr langen Antworten: max. 32 Bytes inline,
+       danach abkürzen und Gesamtlänge anzeigen. Wichtig wenn das Gerät
+       unerwartet grosse Frames sendet (z.B. 256+ Byte Default-Buffer). */
+    if(!bytes) return '(null)';
+    const arr = Array.from(bytes);
+    if(arr.length <= 32) return arr.map(b=>b.toString(16).padStart(2,'0')).join(' ') + ` [${arr.length}B]`;
+    const head = arr.slice(0, 32).map(b=>b.toString(16).padStart(2,'0')).join(' ');
+    return `${head} … [Gesamt ${arr.length}B]`;
+  }
 
   static isSupported(){ return typeof navigator !== 'undefined' && !!navigator.bluetooth; }
 
@@ -1654,6 +1663,14 @@ class OmronBleManager {
 
   _onRxNotification(channelIdx, value){
     const bytes = new Uint8Array(value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength));
+
+    /* "Late-Notify"-Buffer: Wenn diese Notification NACH einem Timeout
+       eintrifft (aber vermutlich die echte Geräteantwort ist), speichern
+       wir sie hier — der nächste _waitUnlockResponse kann sie sofort
+       konsumieren. Das fängt das Race-Condition-Problem ab, wo das Gerät
+       langsamer antwortet als unser Timeout. */
+    this._lastRxBytes = bytes;
+    this._lastRxTs = Date.now();
 
     /* PRIORITÄT 1: Wenn auf eine Unlock-/Pairing-Antwort gewartet wird, ist
        diese Notification der echte Response (anders als die Echo-Notify auf
@@ -2027,21 +2044,20 @@ class OmronBleManager {
       }
       codeB = respB.code;
       if(codeB === 0x8200){ this._log(`✓ SCHRITT B (Versuch ${attempt}): Gerät bestätigt Pairing-Modus (0x8200)`); break; }
-      if(respB.isEcho){
-        this._log(`SCHRITT B Versuch ${attempt}: Echo erkannt — warte und retry …`);
-      } else {
-        this._log(`SCHRITT B Versuch ${attempt}: Unerwartete Antwort 0x${codeB.toString(16).padStart(4,'0')} — retry …`);
+      /* Frühe Junk-Erkennung: wenn die Antwort offensichtlich kein valider
+         Pairing-ACK ist (alles Nullen, Echo, Checksummenfehler), brechen
+         wir die Retry-Schleife sofort ab und gehen in den Bypass. Spart
+         dem User mehrere Sekunden Wartezeit. */
+      if(respB.isEcho || OmronBleManager._isJunkResponse(respB.bytes)){
+        this._log(`SCHRITT B Versuch ${attempt}: ${respB.isEcho ? 'Echo' : 'Junk/Nullen'} — Pairing-Protokoll greift nicht, gehe direkt in Bypass.`);
+        this.pairingKey = OmronBleManager.PAIR_KEY;
+        omronIsPaired = true;
+        this._setState('CONNECTED');
+        return 'bypass';
       }
+      this._log(`SCHRITT B Versuch ${attempt}: Unerwartete Antwort 0x${codeB.toString(16).padStart(4,'0')} — retry …`);
       await new Promise(r => setTimeout(r, 1000));
       if(attempt === SCHRITT_B_MAX){
-        /* Letzter Ausweg: Echo-Bypass (Gerät reagiert nicht im omblepy-Sinn) */
-        if(respB.isEcho || OmronBleManager._isJunkResponse(respB.bytes)){
-          this._log('SCHRITT B: nach 10 Versuchen keine Antwort — versuche direkten EEPROM-Zugriff (OS-Bond als einzige Authentifizierung).');
-          this.pairingKey = OmronBleManager.PAIR_KEY;
-          omronIsPaired = true;
-          this._setState('CONNECTED');
-          return 'bypass';
-        }
         throw new Error(`Unerwartete Pairing-Antwort nach ${SCHRITT_B_MAX} Versuchen (zuletzt 0x${codeB.toString(16).padStart(4,'0')}).\n\nBitte sicherstellen, dass "-P-" am OMRON blinkt.`);
       }
     }
@@ -2100,10 +2116,20 @@ class OmronBleManager {
     try{
       resp = await waitResp;
     }catch(notifyErr){
-      /* Notify-Timeout — Antworten kommen auf RX-Char (49123040), nicht
-         auf Unlock-Char. Read-Fallback liest deshalb die RX-Char, mit
-         Polling (5 Versuche à 300ms) und Per-Read-Timeout (2s) damit
-         ein hängender BLE-Stack nicht ewig blockiert. */
+      /* Race-Condition-Fix: Eine Late-Notify (kam Sekunden nach unserem Write,
+         aber knapp nach unserem Timeout) liegt evtl. im _lastRxBytes-Buffer.
+         Zuerst kurz warten (200ms), damit eine im Moment des Timeouts
+         eintreffende Notification noch verarbeitet wird, dann Buffer prüfen.
+         AUCH ungültige (Null-)Frames durchreichen, damit Junk-Bypass greift. */
+      await new Promise(r => setTimeout(r, 200));
+      if(this._lastRxBytes && this._lastRxBytes.length >= 3){
+        const lateBytes = this._lastRxBytes;
+        this._lastRxBytes = null;
+        const isJunk = OmronBleManager._isJunkResponse(lateBytes);
+        this._log(`Late-Notify-Buffer: ${this._hex(lateBytes)}${isJunk ? ' (Junk)' : ''} — als Antwort gewertet`);
+        return { code: (lateBytes[1] << 8) | lateBytes[2], bytes: lateBytes, isEcho: false };
+      }
+      /* Notify-Timeout — Read-Fallback auf RX-Char. */
       this._log('Notify-Timeout — Read-Polling auf RX-Char (49123040), 5× à 300ms …');
       if(!this.rxChars[0]){
         this._log('Read-Fallback nicht möglich: RX-Char nicht aufgelöst');
