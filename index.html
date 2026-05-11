@@ -86,7 +86,7 @@
        • CDN-Libs   ⇒ CACHE-FIRST (statische Versions-URLs ändern sich nie)
      Cache-Name bumped auf v3 nach Bug-Fix für Notify-Hang. */
   const swCode = [
-    "const CACHE_NAME = 'omron-bp-v4';",
+    "const CACHE_NAME = 'omron-bp-v5';",
     "const CACHE_URLS = [",
     "  './',",
     "  './index.html',",
@@ -738,7 +738,7 @@
       </svg>
       <p style="margin:0 0 4px;font-weight:600;color:var(--text);font-size:.94rem">OMRON M7 Blutdruck</p>
       <p style="margin:0 0 8px">für OMRON M7 Intelli IT (HEM-7361T).<br>Läuft lokal &mdash; alle Daten bleiben auf diesem Gerät.<br><span id="pwa-status" style="color:var(--text-3);font-size:.75rem"></span></p>
-      <p style="margin:0;color:var(--text-3);font-size:.75rem">Version 2.1-fix4 · Build 2026-05-11-b · <span id="storage-info">—</span></p>
+      <p style="margin:0;color:var(--text-3);font-size:.75rem">Version 2.1-fix5 · Build 2026-05-11-c · <span id="storage-info">—</span></p>
       <p style="margin:6px 0 0;font-size:.7rem">
         <button id="btn-force-refresh" style="background:none;border:1px solid var(--text-3);color:var(--text-3);padding:4px 10px;border-radius:6px;cursor:pointer;font-size:.7rem">⟳ App-Cache leeren &amp; neu laden</button>
       </p>
@@ -1835,18 +1835,33 @@ class OmronBleManager {
       this.service = OmronBleManager._filterVendorService(allServices);
       this._log(`✓ Vendor-Service gefunden: ${this.service.uuid}`);
 
-      /* Unlock-Char mit robustem Fehlerpfad: bei Fehlschlag alle Chars listen */
+      /* DIAGNOSE: ALLE Charakteristiken mit Properties listen.
+         Auf der AFib-Firmware sind die proprietären Chars verschlüsselt,
+         was Notify/Read hängen lässt. Hier sehen wir genau, welche Chars
+         es WIRKLICH gibt und welche Operationen technisch möglich sind. */
+      let allChars = [];
+      try{
+        allChars = await this.service.getCharacteristics();
+        this._log(`Charakteristiken im Vendor-Service (${allChars.length}):`);
+        allChars.forEach(c => {
+          const p = c.properties || {};
+          const flags = [];
+          if(p.read) flags.push('READ');
+          if(p.write) flags.push('WRITE');
+          if(p.writeWithoutResponse) flags.push('WRITE-NR');
+          if(p.notify) flags.push('NOTIFY');
+          if(p.indicate) flags.push('INDICATE');
+          this._log(`  · ${c.uuid}  [${flags.join('|') || '(keine)'}]`);
+        });
+      }catch(e){
+        this._log(`Char-Diagnose fehlgeschlagen: ${e.message}`);
+      }
+
+      /* Unlock-Char mit robustem Fehlerpfad */
       try{
         this.unlockChar = await this.service.getCharacteristic(OmronBleManager.UUID_UNLOCK);
         this._log(`✓ Unlock-Char UUID: ${this.unlockChar.uuid}`);
       }catch(e){
-        try{
-          const allChars = await this.service.getCharacteristics();
-          this._log(`Unlock-Char nicht gefunden. Verfügbare Chars (${allChars.length}):`);
-          allChars.forEach(c => this._log(`  · ${c.uuid}`));
-        }catch(listErr){
-          this._log(`Char-Listing ebenfalls fehlgeschlagen: ${listErr.message}`);
-        }
         throw new Error(`Unlock-Charakteristik nicht gefunden (${e.message}).\nBitte Log kopieren und melden.`);
       }
       /* WICHTIG (AFib-Firmware-Quirk):
@@ -1877,8 +1892,12 @@ class OmronBleManager {
            startNotifications läuft. Read-Fallback nutzt diese Referenz. */
       }
 
-      /* Event-Kanal 8858eb40 — laut Spec nicht für Unlock, nur Status/Events.
-         Wir abonnieren zur Diagnose, lösen aber kein unlock-pending mehr aus. */
+      /* Event-Kanal 8858eb40 — auf der AFib-Firmware der EINZIGE Notify-fähige
+         Channel (RX 49123040 + Unlock b305b680 hängen bei CCCD-Write).
+         Daher hier sowohl loggen als auch als Pairing-Response-Resolver
+         nutzen: wenn nach einem Unlock-Write ein gültiger Response-Code
+         (0x8100/0x8200/0x8000) auf 8858eb40 ankommt, lösen wir das
+         pending Unlock-Promise auf. */
       try{
         const eventChar = await this.service.getCharacteristic('8858eb40-aee8-11e1-bb67-0002a5d5c51b');
         await eventChar.startNotifications();
@@ -1886,8 +1905,23 @@ class OmronBleManager {
           const v = ev.target.value;
           const bytes = new Uint8Array(v.buffer.slice(v.byteOffset, v.byteOffset + v.byteLength));
           this._log(`EVENT (8858eb40) ← ${this._hex(bytes)}`);
+          /* Defensive Response-Erkennung: wenn ein bekannter Response-Code
+             auf der Event-Char eintrifft und eine Pairing-Antwort erwartet
+             wird, hier auflösen. Auf der AFib-Firmware könnte das der
+             einzige Weg sein, an Pairing-Acks zu kommen. */
+          if(this._unlockPending && bytes.length >= 3){
+            const code = (bytes[1] << 8) | bytes[2];
+            if(code === 0x8100 || code === 0x8000 || code === 0x8200 ||
+               code === 0x8f00 || code === 0x81c0){
+              this._log(`  → 8858eb40-Antwort als Pairing-Response erkannt (0x${code.toString(16)})`);
+              const {resolve, timer} = this._unlockPending;
+              this._unlockPending = null;
+              clearTimeout(timer);
+              resolve(bytes);
+            }
+          }
         });
-        this._log('Event-Char (8858eb40) Notify aktiv');
+        this._log('✓ Event-Char (8858eb40) Notify aktiv — auch als Response-Channel');
       }catch(e){
         this._log(`Event-Char (8858eb40) nicht verfügbar: ${e.message}`);
       }
@@ -1980,9 +2014,9 @@ class OmronBleManager {
        abgeschlossen ist. Das kann ein paar Sekunden dauern. omblepy probiert
        deshalb bis zu 10× im Sekundentakt — kürzere Einzel-Timeouts geben dem
        Bond-Stack Zeit, sich zu stabilisieren. */
-    this._log('SCHRITT B — Pairing-Init 0x02 + Dummy (erwartet 0x8200, bis zu 10× Retry)');
+    this._log('SCHRITT B — Pairing-Init 0x02 + Dummy (erwartet 0x8200, bis zu 3× Retry)');
     let respB = null, codeB = 0;
-    const SCHRITT_B_MAX = 10;
+    const SCHRITT_B_MAX = 3;
     for(let attempt = 1; attempt <= SCHRITT_B_MAX; attempt++){
       try{
         respB = await this._unlockAndWait(0x02, new Uint8Array(16), 1500);
