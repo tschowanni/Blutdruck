@@ -2335,16 +2335,31 @@ class OmronBleManager {
     ];
     const total = 2 * OmronBleManager.EEP.MAX_RECS;
     let done = 0;
+    let consecutiveErrors = 0;
     const allParsed = [];
-    for(const u of users){
+    outer: for(const u of users){
       for(let i=0; i<OmronBleManager.EEP.MAX_RECS; i++){
         const addr = u.start + i * OmronBleManager.EEP.REC_SIZE;
         try{
           const bytes = await this._readBlock(addr);
           const rec   = OmronBleManager.parseSingleRecord(bytes, u.idx);
           if(rec){ u.out.push(rec); allParsed.push(rec); }
+          consecutiveErrors = 0;
         }catch(e){
           this._log(`Lesefehler @ 0x${addr.toString(16)}: ${e.message}`);
+          consecutiveErrors++;
+          /* Früher Abbruch: 5× hintereinander Read-Fehler → Diagnose statt
+             200× Spam. Verhindert auch endlose Notify-Timeouts. */
+          if(consecutiveErrors >= 5){
+            this._log('✗ 5× hintereinander EEPROM-Read-Fehler — Abbruch.');
+            this._log('Diagnose: Gerät antwortet zwar auf BLE-Connect, gibt aber keine');
+            this._log('EEPROM-Daten frei. Wahrscheinliche Ursachen:');
+            this._log('  • OMRON-Connect-Pairing-Key noch aktiv (Factory Reset nötig)');
+            this._log('  • AFib-Firmware mit Web Bluetooth + Android inkompatibel');
+            this._log('  • Encryption-Level-Mismatch (SC vs Legacy Pairing)');
+            this._log('Workaround: OMRON Connect App → CSV-Export → CSV-Import in dieser App.');
+            break outer;
+          }
         }
         done++;
         this._progress({ done, total, phase:`Lese Block ${done} von ${total} (User ${u.idx})`, percent:(done/total)*100 });
