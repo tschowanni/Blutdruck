@@ -86,7 +86,7 @@
        • CDN-Libs   ⇒ CACHE-FIRST (statische Versions-URLs ändern sich nie)
      Cache-Name bumped auf v3 nach Bug-Fix für Notify-Hang. */
   const swCode = [
-    "const CACHE_NAME = 'omron-bp-v3';",
+    "const CACHE_NAME = 'omron-bp-v4';",
     "const CACHE_URLS = [",
     "  './',",
     "  './index.html',",
@@ -738,7 +738,7 @@
       </svg>
       <p style="margin:0 0 4px;font-weight:600;color:var(--text);font-size:.94rem">OMRON M7 Blutdruck</p>
       <p style="margin:0 0 8px">für OMRON M7 Intelli IT (HEM-7361T).<br>Läuft lokal &mdash; alle Daten bleiben auf diesem Gerät.<br><span id="pwa-status" style="color:var(--text-3);font-size:.75rem"></span></p>
-      <p style="margin:0;color:var(--text-3);font-size:.75rem">Version 2.1-fix3 · Build 2026-05-11 · <span id="storage-info">—</span></p>
+      <p style="margin:0;color:var(--text-3);font-size:.75rem">Version 2.1-fix4 · Build 2026-05-11-b · <span id="storage-info">—</span></p>
       <p style="margin:6px 0 0;font-size:.7rem">
         <button id="btn-force-refresh" style="background:none;border:1px solid var(--text-3);color:var(--text-3);padding:4px 10px;border-radius:6px;cursor:pointer;font-size:.7rem">⟳ App-Cache leeren &amp; neu laden</button>
       </p>
@@ -1864,15 +1864,17 @@ class OmronBleManager {
          Echte Geräteantworten (Unlock-ACKs UND Daten-Responses) kommen
          laut Reverse-Engineering auf dieser Char, NICHT auf b305b680.
          Auch hier Timeout-Schutz für Bonding-Probleme. */
-      this._log('Aktiviere Notify auf RX-Char 49123040 (max. 8s) …');
+      this._log('Aktiviere Notify auf RX-Char 49123040 (max. 3s) …');
       try{
         await Promise.race([
           this._subscribeRxChannel(0),
-          new Promise((_, rej) => setTimeout(() => rej(new Error('RX-Notify Timeout (8s)')), 8000))
+          new Promise((_, rej) => setTimeout(() => rej(new Error('RX-Notify Timeout (3s)')), 3000))
         ]);
+        this._log('✓ RX-Notify aktiv');
       }catch(e){
-        this._log(`RX-Char Früh-Abonnierung fehlgeschlagen: ${e.message}`);
-        /* Nicht throw — manche Geräte erlauben RX-Notify erst nach Unlock-Schritt */
+        this._log(`RX-Notify nicht aktivierbar (${e.message}) — wechsle auf Read-Polling-Modus`);
+        /* Wichtig: rxChars[0] ist trotzdem gesetzt, weil getCharacteristic VOR
+           startNotifications läuft. Read-Fallback nutzt diese Referenz. */
       }
 
       /* Event-Kanal 8858eb40 — laut Spec nicht für Unlock, nur Status/Events.
@@ -2065,15 +2067,39 @@ class OmronBleManager {
       resp = await waitResp;
     }catch(notifyErr){
       /* Notify-Timeout — Antworten kommen auf RX-Char (49123040), nicht
-         auf Unlock-Char. Read-Fallback liest deshalb die RX-Char. */
-      this._log(`Notify-Timeout — probiere Read-Fallback auf RX-Char (49123040) …`);
-      try{
-        if(!this.rxChars[0]) throw new Error('RX-Char nicht früh-abonniert');
-        const dv = await this.rxChars[0].readValue();
-        resp = new Uint8Array(dv.buffer.slice(dv.byteOffset, dv.byteOffset + dv.byteLength));
-        this._log(`RX-READ: ${this._hex(resp)}`);
-      }catch(readErr){
-        this._log(`Read-Fallback ebenfalls fehlgeschlagen: ${readErr.message}`);
+         auf Unlock-Char. Read-Fallback liest deshalb die RX-Char, mit
+         Polling (5 Versuche à 300ms) und Per-Read-Timeout (2s) damit
+         ein hängender BLE-Stack nicht ewig blockiert. */
+      this._log('Notify-Timeout — Read-Polling auf RX-Char (49123040), 5× à 300ms …');
+      if(!this.rxChars[0]){
+        this._log('Read-Fallback nicht möglich: RX-Char nicht aufgelöst');
+        throw notifyErr;
+      }
+      const readWithTimeout = () => Promise.race([
+        this.rxChars[0].readValue(),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('readValue Timeout 2s')), 2000))
+      ]);
+      let lastErr = null;
+      for(let attempt = 1; attempt <= 5; attempt++){
+        try{
+          const dv = await readWithTimeout();
+          const bytes = new Uint8Array(dv.buffer.slice(dv.byteOffset, dv.byteOffset + dv.byteLength));
+          this._log(`RX-READ Versuch ${attempt}: ${this._hex(bytes)}`);
+          /* Plausibilitätscheck: nicht-leere Antwort mit valider Länge */
+          if(bytes.length >= 3 && bytes[0] > 0 && bytes[0] <= 64){
+            resp = bytes;
+            break;
+          }
+          /* sonst: leer/junk — kurz warten und nochmal versuchen */
+          await new Promise(r => setTimeout(r, 300));
+        }catch(readErr){
+          lastErr = readErr;
+          this._log(`RX-READ Versuch ${attempt} fehlgeschlagen: ${readErr.message}`);
+          if(attempt < 5) await new Promise(r => setTimeout(r, 300));
+        }
+      }
+      if(!resp){
+        this._log(`Read-Polling erschöpft — letzter Fehler: ${lastErr ? lastErr.message : 'kein valider Frame'}`);
         throw notifyErr;
       }
     }
