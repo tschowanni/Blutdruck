@@ -80,9 +80,13 @@
   } catch(e){ console.warn('Manifest-Blob nicht erzeugbar:', e); }
 
   /* ---------- Service Worker als Blob-URL ---------- */
-  /* SW cached: diese HTML + 3 CDN-Scripts. Fetch: cache-first, dann Netzwerk. */
+  /* SW cached: diese HTML + 3 CDN-Scripts.
+     STRATEGIE — gemischt:
+       • HTML/index ⇒ NETWORK-FIRST (immer neueste Version bei Online)
+       • CDN-Libs   ⇒ CACHE-FIRST (statische Versions-URLs ändern sich nie)
+     Cache-Name bumped auf v3 nach Bug-Fix für Notify-Hang. */
   const swCode = [
-    "const CACHE_NAME = 'omron-bp-v2';",
+    "const CACHE_NAME = 'omron-bp-v3';",
     "const CACHE_URLS = [",
     "  './',",
     "  './index.html',",
@@ -100,8 +104,30 @@
     "  ));",
     "  self.clients.claim();",
     "});",
+    "self.addEventListener('message', e => {",
+    "  if(e.data && e.data.type === 'FORCE_CLEAR'){",
+    "    caches.keys().then(keys => Promise.all(keys.map(k => caches.delete(k))))",
+    "      .then(() => e.source && e.source.postMessage({type:'CLEARED'}));",
+    "  }",
+    "});",
     "self.addEventListener('fetch', e => {",
     "  if(e.request.method !== 'GET') return;",
+    "  const url = e.request.url;",
+    "  const isHTML = url.endsWith('/') || url.endsWith('.html') || e.request.mode === 'navigate';",
+    "  if(isHTML){",
+    "    // NETWORK-FIRST für HTML: neue Code-Änderungen werden sofort sichtbar",
+    "    e.respondWith(",
+    "      fetch(e.request).then(resp => {",
+    "        if(resp && resp.status === 200){",
+    "          const clone = resp.clone();",
+    "          caches.open(CACHE_NAME).then(c => c.put(e.request, clone)).catch(()=>{});",
+    "        }",
+    "        return resp;",
+    "      }).catch(() => caches.match(e.request))",
+    "    );",
+    "    return;",
+    "  }",
+    "  // CACHE-FIRST für statische Assets (CDN-Libs)",
     "  e.respondWith(",
     "    caches.match(e.request).then(cached =>",
     "      cached || fetch(e.request).then(resp => {",
@@ -712,7 +738,10 @@
       </svg>
       <p style="margin:0 0 4px;font-weight:600;color:var(--text);font-size:.94rem">OMRON M7 Blutdruck</p>
       <p style="margin:0 0 8px">für OMRON M7 Intelli IT (HEM-7361T).<br>Läuft lokal &mdash; alle Daten bleiben auf diesem Gerät.<br><span id="pwa-status" style="color:var(--text-3);font-size:.75rem"></span></p>
-      <p style="margin:0;color:var(--text-3);font-size:.75rem">Version 2.0 · <span id="storage-info">—</span></p>
+      <p style="margin:0;color:var(--text-3);font-size:.75rem">Version 2.1-fix3 · Build 2026-05-11 · <span id="storage-info">—</span></p>
+      <p style="margin:6px 0 0;font-size:.7rem">
+        <button id="btn-force-refresh" style="background:none;border:1px solid var(--text-3);color:var(--text-3);padding:4px 10px;border-radius:6px;cursor:pointer;font-size:.7rem">⟳ App-Cache leeren &amp; neu laden</button>
+      </p>
     </div>
   </div>
 </main>
@@ -1412,6 +1441,33 @@ function chartOptions(type, data){
 function openDialog(id){ document.getElementById(id).classList.add('open'); }
 function closeDialog(id){ document.getElementById(id).classList.remove('open'); }
 document.querySelectorAll('.backdrop').forEach(b=> b.addEventListener('click', e=>{ if(e.target===b) b.classList.remove('open'); }));
+
+/* Force-Refresh-Button: SW entregistrieren + alle Caches löschen + Hard-Reload.
+   Nötig wenn Browser noch eine alte Version aus dem PWA-Cache liefert. */
+(function(){
+  const btn = document.getElementById('btn-force-refresh');
+  if(!btn) return;
+  btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    btn.textContent = '⟳ Bereinige …';
+    try{
+      if('caches' in window){
+        const keys = await caches.keys();
+        await Promise.all(keys.map(k => caches.delete(k)));
+      }
+      if('serviceWorker' in navigator){
+        const regs = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(regs.map(r => r.unregister()));
+      }
+    }catch(e){
+      console.warn('Cache-Cleanup-Fehler:', e);
+    }
+    /* Hard-Reload mit Cache-Bypass via Query-String */
+    const url = new URL(location.href);
+    url.searchParams.set('_v', Date.now().toString(36));
+    location.replace(url.toString());
+  });
+})();
 function openAdd(){
   const now = new Date();
   document.getElementById('in-date').value = now.toISOString().slice(0,10);
@@ -1793,32 +1849,16 @@ class OmronBleManager {
         }
         throw new Error(`Unlock-Charakteristik nicht gefunden (${e.message}).\nBitte Log kopieren und melden.`);
       }
-      /* startNotifications() kann auf bestimmten Geräten unbegrenzt hängen,
-         wenn das OS-Bonding inkonsistent ist (Handy hat alten Schlüssel,
-         Gerät erwartet neue Kopplung). Timeout-Schutz + Diagnose. */
-      this._log('Aktiviere Notify auf Unlock-Char (max. 8s) …');
-      try{
-        await Promise.race([
-          this.unlockChar.startNotifications(),
-          new Promise((_, rej) => setTimeout(() => rej(new Error('Notify-Aktivierung Timeout (8s)')), 8000))
-        ]);
-        this.unlockChar.addEventListener('characteristicvaluechanged', (ev)=> this._onUnlockNotify(ev.target.value));
-        this._log('Unlock-Char (b305b680, Control) Notify aktiv');
-      }catch(notifyErr){
-        this._log(`Notify-Aktivierung blockiert: ${notifyErr.message}`);
-        throw new Error(
-          'Bluetooth-Kommunikation hängt — wahrscheinlich veralteter Bonding-Status.\n\n' +
-          'Das Handy hat noch eine alte Kopplung gespeichert, das Gerät erwartet aber\n' +
-          'eine neue (es zeigt "-P-"). Beides muss zurückgesetzt werden:\n\n' +
-          '1. Android-Einstellungen → Bluetooth\n' +
-          '2. OMRON-Gerät in der Liste antippen → Zahnrad/Einstellungen-Icon\n' +
-          '3. "Entkoppeln" oder "Gerät vergessen" wählen\n' +
-          '   (falls nicht verfügbar: Android Apps → Bluetooth → Speicher → "Cache leeren")\n' +
-          '4. Chrome komplett schließen (Recent-Apps wegwischen)\n' +
-          '5. OMRON erneut Bluetooth-Taste 3-5 Sek. halten bis "-P-" blinkt\n' +
-          '6. Chrome öffnen, App laden, "Verbinden" tippen → die OS-Kopplung wird frisch aufgebaut'
-        );
-      }
+      /* WICHTIG (AFib-Firmware-Quirk):
+         Notify-Subscribe auf der Unlock-Char (b305b680) hängt auf der
+         M7-Intelli-IT-AFib-Firmware unbegrenzt — das NOTIFY-Property wird
+         zwar in der Service-Discovery angezeigt, aber der CCCD-Write zur
+         Aktivierung wird vom Gerät nie bestätigt. Wir nutzen die Unlock-Char
+         deshalb NUR für WRITES (Pairing-Kommandos schreiben). Alle Antworten
+         — inkl. Pairing-ACKs (0x8100, 0x8200, 0x8000) — kommen über RX[0]
+         (49123040), das wir gleich abonnieren. Das entspricht der omblepy-
+         Architektur. */
+      this._log('Unlock-Char nur als Schreib-Kanal genutzt (kein Notify-Subscribe auf b305b680)');
 
       /* RX-Char (49123040) FRÜH abonnieren — vor Pairing.
          Echte Geräteantworten (Unlock-ACKs UND Daten-Responses) kommen
