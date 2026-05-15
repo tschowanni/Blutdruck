@@ -86,7 +86,7 @@
        • CDN-Libs   ⇒ CACHE-FIRST (statische Versions-URLs ändern sich nie)
      Cache-Name bumped auf v3 nach Bug-Fix für Notify-Hang. */
   const swCode = [
-    "const CACHE_NAME = 'omron-bp-v10';",
+    "const CACHE_NAME = 'omron-bp-v11';",
     "const CACHE_URLS = [",
     "  './',",
     "  './index.html',",
@@ -738,7 +738,7 @@
       </svg>
       <p style="margin:0 0 4px;font-weight:600;color:var(--text);font-size:.94rem">OMRON M7 Blutdruck</p>
       <p style="margin:0 0 8px">für OMRON M7 Intelli IT (HEM-7361T).<br>Läuft lokal &mdash; alle Daten bleiben auf diesem Gerät.<br><span id="pwa-status" style="color:var(--text-3);font-size:.75rem"></span></p>
-      <p style="margin:0;color:var(--text-3);font-size:.75rem">Version 2.3-AFib-Stream · Build 2026-05-15-d · <span id="storage-info">—</span></p>
+      <p style="margin:0;color:var(--text-3);font-size:.75rem">Version 2.3-AFib-Stream · Build 2026-05-15-e · <span id="storage-info">—</span></p>
       <p style="margin:6px 0 0;font-size:.7rem">
         <button id="btn-force-refresh" style="background:none;border:1px solid var(--text-3);color:var(--text-3);padding:4px 10px;border-radius:6px;cursor:pointer;font-size:.7rem">⟳ App-Cache leeren &amp; neu laden</button>
       </p>
@@ -1773,7 +1773,7 @@ class OmronBleManager {
     if(this.state !== 'DISCONNECTED') throw new Error('Ungültiger Zustand: '+this.state);
     try{
       this._setState('CONNECTING');
-      this._log('=== App-Build: 2.3-AFib-Stream · 2026-05-15-d (Phase A→E nach Protokoll-Doku) ===');
+      this._log('=== App-Build: 2.3-AFib-Stream · 2026-05-15-e (UI-Finalisierung + Auto-Close) ===');
       this._log('Scan nach OMRON-Gerät …');
       /* optionalServices vollständig: Chrome erlaubt den Zugriff nur auf
          UUIDs, die HIER gelistet sind — egal was das Gerät tatsächlich meldet. */
@@ -2486,9 +2486,9 @@ class OmronBleManager {
          Date.now() - this._rx0LastTs > 800){
         break;
       }
-      /* Progress alle 500ms */
+      /* Progress alle 10 Fragmente */
       if(this._rx0Fragments.length !== lastReported &&
-         this._rx0Fragments.length % 20 === 0){
+         this._rx0Fragments.length % 10 === 0){
         this._progress({ done: this._rx0Fragments.length, total: 157,
           phase:`Stream-Empfang: ${this._rx0Fragments.length} Fragmente`,
           percent: Math.min(95, (this._rx0Fragments.length / 157) * 100) });
@@ -2500,6 +2500,10 @@ class OmronBleManager {
     const fragments = this._rx0Fragments.slice();
     this._rx0Fragments = [];
     this._log(`✓ PHASE D: ${fragments.length} Fragmente empfangen`);
+
+    /* Finalen Progress-Stand setzen */
+    this._progress({ done: fragments.length, total: fragments.length,
+      phase:`Stream komplett: ${fragments.length} Fragmente`, percent: 95 });
 
     if(fragments.length === 0){
       throw new Error('Stream-Dump lieferte keine Fragmente. AFib-FW antwortet nicht auf 0c 03.');
@@ -2807,12 +2811,17 @@ async function startBluetoothSync(){
     const result = await omronMgr.syncAllRecords(state.readings);
     const all    = [...result.user1, ...result.user2];
 
+    /* Stream fertig — Progress auf 100% setzen, sofort sichtbar */
+    progBar.style.width  = '100%';
+    progText.textContent = 'Stream komplett – verarbeite Messwerte …';
+
     for(const rec of all){
       const stored = {
         id: uid(), ts: rec.ts, sys: rec.sys, dia: rec.dia, pul: rec.bpm,
         arm: rec.user === 2 ? 'rechts' : 'links',
-        note: `OMRON · User ${rec.user}`,
-        irr: rec.ihb, mov: rec.mov
+        note: `OMRON · User ${rec.user}` + (rec.seq !== undefined ? ` · Seq ${rec.seq}` : ''),
+        irr: rec.ihb, mov: rec.mov,
+        seq: rec.seq   /* für Duplikat-Erkennung im nächsten Sync */
       };
       state.readings.push(stored);
       persistReading(stored);
@@ -2823,11 +2832,34 @@ async function startBluetoothSync(){
     toast(`${result.newCount} neue · ${result.duplicateCount} Duplikate`);
     renderOverview();
 
+    /* Finale UI-Meldung */
+    progText.textContent = result.newCount > 0
+      ? `✓ ${result.newCount} neue Messung${result.newCount === 1 ? '' : 'en'} übernommen`
+      : (result.duplicateCount > 0
+          ? `✓ Fertig — ${result.duplicateCount} Duplikate übersprungen`
+          : '✓ Sync abgeschlossen (keine neuen Messwerte)');
+
     await omronMgr.disconnect();
+
+    /* Sync-Dialog nach 2.5s automatisch schliessen, damit der User die Daten
+       sehen kann ohne manuell "Schliessen" tippen zu müssen. */
+    setTimeout(() => {
+      try{
+        const dlg = document.getElementById('dlg-sync');
+        if(dlg && dlg.classList.contains('open')){
+          dlg.classList.remove('open');
+        }
+        /* Progress-Element für nächsten Sync zurücksetzen */
+        progEl.style.display = 'none';
+        progBar.style.width = '0%';
+      }catch(e){}
+    }, 2500);
   }catch(err){
     console.error(err);
     if(omronMgr) omronMgr._log(`✗ FEHLER: ${err.message}`);
     toast('Sync fehlgeschlagen: '+err.message);
+    progText.textContent = '✗ Fehler — siehe Log';
+    progBar.style.width = '0%';
     try{ if(omronMgr) await omronMgr.disconnect(); }catch(e){}
   }finally{
     btn.disabled = false;
