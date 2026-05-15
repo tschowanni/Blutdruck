@@ -86,7 +86,7 @@
        • CDN-Libs   ⇒ CACHE-FIRST (statische Versions-URLs ändern sich nie)
      Cache-Name bumped auf v3 nach Bug-Fix für Notify-Hang. */
   const swCode = [
-    "const CACHE_NAME = 'omron-bp-v9';",
+    "const CACHE_NAME = 'omron-bp-v10';",
     "const CACHE_URLS = [",
     "  './',",
     "  './index.html',",
@@ -738,7 +738,7 @@
       </svg>
       <p style="margin:0 0 4px;font-weight:600;color:var(--text);font-size:.94rem">OMRON M7 Blutdruck</p>
       <p style="margin:0 0 8px">für OMRON M7 Intelli IT (HEM-7361T).<br>Läuft lokal &mdash; alle Daten bleiben auf diesem Gerät.<br><span id="pwa-status" style="color:var(--text-3);font-size:.75rem"></span></p>
-      <p style="margin:0;color:var(--text-3);font-size:.75rem">Version 2.2-AFib · Build 2026-05-15-c · <span id="storage-info">—</span></p>
+      <p style="margin:0;color:var(--text-3);font-size:.75rem">Version 2.3-AFib-Stream · Build 2026-05-15-d · <span id="storage-info">—</span></p>
       <p style="margin:6px 0 0;font-size:.7rem">
         <button id="btn-force-refresh" style="background:none;border:1px solid var(--text-3);color:var(--text-3);padding:4px 10px;border-radius:6px;cursor:pointer;font-size:.7rem">⟳ App-Cache leeren &amp; neu laden</button>
       </p>
@@ -1664,11 +1664,22 @@ class OmronBleManager {
   _onRxNotification(channelIdx, value){
     const bytes = new Uint8Array(value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength));
 
+    /* AFib-Stream-Modus (Phase C/D): EEPROM-Dump kommt als viele Fragmente
+       à 244 Bytes auf RX0 zurück. Diese werden hier gesammelt — Auflösung
+       erfolgt in syncAllRecords nach Stream-Ruhe (>800ms ohne neuen Frame). */
+    if(this._streamMode && channelIdx === 0){
+      this._rx0Fragments.push(bytes);
+      this._rx0LastTs = Date.now();
+      if(this._rx0Fragments.length <= 3 || this._rx0Fragments.length % 20 === 0){
+        this._log(`STREAM-Fragment #${this._rx0Fragments.length}: ${this._hex(bytes)}`);
+      }
+      return;
+    }
+
     /* "Late-Notify"-Buffer: Wenn diese Notification NACH einem Timeout
        eintrifft (aber vermutlich die echte Geräteantwort ist), speichern
        wir sie hier — der nächste _waitUnlockResponse kann sie sofort
-       konsumieren. Das fängt das Race-Condition-Problem ab, wo das Gerät
-       langsamer antwortet als unser Timeout. */
+       konsumieren. */
     this._lastRxBytes = bytes;
     this._lastRxTs = Date.now();
 
@@ -1762,7 +1773,7 @@ class OmronBleManager {
     if(this.state !== 'DISCONNECTED') throw new Error('Ungültiger Zustand: '+this.state);
     try{
       this._setState('CONNECTING');
-      this._log('=== App-Build: 2.2-AFib · 2026-05-15-c (Read-Polling-Fallback aktiv) ===');
+      this._log('=== App-Build: 2.3-AFib-Stream · 2026-05-15-d (Phase A→E nach Protokoll-Doku) ===');
       this._log('Scan nach OMRON-Gerät …');
       /* optionalServices vollständig: Chrome erlaubt den Zugriff nur auf
          UUIDs, die HIER gelistet sind — egal was das Gerät tatsächlich meldet. */
@@ -1891,17 +1902,33 @@ class OmronBleManager {
       }catch(e){
         throw new Error(`Unlock-Charakteristik nicht gefunden (${e.message}).\nBitte Log kopieren und melden.`);
       }
-      /* AFib-Firmware echtes Protokoll (aus btsnoop_hci.log rekonstruiert):
-         - CCCD MUSS auf BEIDEN Channels aktiviert werden: 0x0021 (RX0) UND
-           0x001c (Unlock-Char). OMRON Connect macht das in Phase 1 der
-           Discovery, BEVOR der erste Unlock-Write erfolgt.
-         - Antwort auf den Unlock-Write kommt auf der UNLOCK-CHAR SELBST,
-           NICHT auf RX0. Format: 91 00 [Echo-Nonce-4B] [Padding].
-         - Unlock-Format ist 20 Bytes: 11 [Nonce-4B] [15B-Padding], gesendet
-           als WriteWithoutResponse (WRITE_CMD).
-         Wir aktivieren die Notify-Subscription jetzt mit kurzem Timeout —
-         wenn sie hängt, fallen wir auf den RX0-only-Pfad zurück. */
-      this._log('Aktiviere Notify auf Unlock-Char b305b680 (AFib-Pairing-Channel, max. 3s) …');
+      /* AFib-Firmware-Protokoll (rekonstruiert aus btsnoop + B4A-Validation,
+         dokumentiert in OMRON_M7_AFib_PROTOCOL.md):
+         KRITISCH — Reihenfolge muss sein:
+           1) RX0-Notify ZUERST aktivieren
+           2) DANACH Unlock-Notify aktivieren
+           3) 1.5s warten (Bond/Encryption-Settlement)
+           4) Erst dann Phase A (Unlock-Write) durchführen
+         Wenn die Reihenfolge umgekehrt war (Unlock vor RX0), hing der CCCD-
+         Write auf Unlock — das war der Showstopper in allen vorigen Tests. */
+
+      /* SCHRITT 1: RX0 (49123040) Notify zuerst aktivieren */
+      this._log('Aktiviere Notify auf RX-Char 49123040 (ZUERST, max. 3s) …');
+      this._rx0Fragments = [];
+      this._rx0LastTs = 0;
+      try{
+        await Promise.race([
+          this._subscribeRxChannel(0),
+          new Promise((_, rej) => setTimeout(() => rej(new Error('RX-Notify Timeout (3s)')), 3000))
+        ]);
+        this._log('✓ RX0-Notify aktiv');
+      }catch(e){
+        this._log(`RX-Notify nicht aktivierbar (${e.message}) — Pairing wird vermutlich scheitern`);
+      }
+
+      /* SCHRITT 2: Unlock-Char (b305b680) Notify aktivieren —
+         laut Protokoll-Doku MUSS dies NACH RX0 passieren */
+      this._log('Aktiviere Notify auf Unlock-Char b305b680 (NACH RX0, max. 5s) …');
       this._unlockNotifyActive = false;
       try{
         await Promise.race([
@@ -1911,7 +1938,6 @@ class OmronBleManager {
               const v = ev.target.value;
               const bytes = new Uint8Array(v.buffer.slice(v.byteOffset, v.byteOffset + v.byteLength));
               this._log(`UNLOCK-NOTIFY ← ${this._hex(bytes)}`);
-              /* AFib-Response: 91 [Status] [Echo-Nonce-4B] ... */
               if(this._unlockPending && bytes.length >= 6 && bytes[0] === 0x91){
                 this._log(`  → AFib-Unlock-Response erkannt (Status 0x${bytes[1].toString(16).padStart(2,'0')})`);
                 const {resolve, timer} = this._unlockPending;
@@ -1921,30 +1947,17 @@ class OmronBleManager {
               }
             });
           })(),
-          new Promise((_, rej) => setTimeout(() => rej(new Error('Unlock-Notify Timeout (3s)')), 3000))
+          new Promise((_, rej) => setTimeout(() => rej(new Error('Unlock-Notify Timeout (5s)')), 5000))
         ]);
         this._unlockNotifyActive = true;
-        this._log('✓ Unlock-Char Notify aktiv (AFib-Modus)');
+        this._log('✓ Unlock-Char Notify aktiv');
       }catch(e){
-        this._log(`Unlock-Notify nicht aktivierbar (${e.message}) — fallback auf RX0-only`);
+        this._log(`Unlock-Notify nicht aktivierbar (${e.message}) — Pairing wird scheitern`);
       }
 
-      /* RX-Char (49123040) FRÜH abonnieren — vor Pairing.
-         Echte Geräteantworten (Unlock-ACKs UND Daten-Responses) kommen
-         laut Reverse-Engineering auf dieser Char, NICHT auf b305b680.
-         Auch hier Timeout-Schutz für Bonding-Probleme. */
-      this._log('Aktiviere Notify auf RX-Char 49123040 (max. 3s) …');
-      try{
-        await Promise.race([
-          this._subscribeRxChannel(0),
-          new Promise((_, rej) => setTimeout(() => rej(new Error('RX-Notify Timeout (3s)')), 3000))
-        ]);
-        this._log('✓ RX-Notify aktiv');
-      }catch(e){
-        this._log(`RX-Notify nicht aktivierbar (${e.message}) — wechsle auf Read-Polling-Modus`);
-        /* Wichtig: rxChars[0] ist trotzdem gesetzt, weil getCharacteristic VOR
-           startNotifications läuft. Read-Fallback nutzt diese Referenz. */
-      }
+      /* SCHRITT 3: Bond/Encryption-Settlement-Pause (1500ms gemäss Doku) */
+      this._log('Bond-Settlement-Pause 1500ms …');
+      await new Promise(r => setTimeout(r, 1500));
 
       /* Event-Kanal 8858eb40 — auf der AFib-Firmware der EINZIGE Notify-fähige
          Channel (RX 49123040 + Unlock b305b680 hängen bei CCCD-Write).
@@ -2039,17 +2052,12 @@ class OmronBleManager {
     pkt.set(nonce, 1);                                // 4-Byte Nonce
     // Bytes 5..19 bleiben 0x00 (Padding)
 
-    this._log(`AFib-UNLOCK — Nonce: ${this._hex(nonce)}`);
+    this._log(`PHASE A — AFib-UNLOCK — Nonce: ${this._hex(nonce)}`);
     this._log(`UNLOCK-TX (writeWithoutResponse): ${this._hex(pkt)}`);
 
-    /* Bond-Stabilisierungs-Pause — im OMRON-Connect-Trace liegen ~700ms
-       zwischen CCCD-Setup und erstem Unlock-Write. */
-    await new Promise(r => setTimeout(r, 700));
-
-    /* Antwort-Wartepromise vorbereiten — Auflösung kommt aus dem
-       Unlock-Notify-Handler (in connect() registriert) bei 0x91-Frame.
-       Nur 2.5s warten, dann Read-Polling als Fallback. */
-    const waitResp = this._waitUnlockResponse(2500);
+    /* Settlement-Pause ist bereits in connect() erfolgt (1500ms nach Notify-
+       Setup). Hier direkt Antwort-Promise vorbereiten und schreiben. */
+    const waitResp = this._waitUnlockResponse(5000);
 
     /* WriteWithoutResponse wie im echten OMRON-Connect-Protokoll */
     try{
@@ -2393,64 +2401,187 @@ class OmronBleManager {
     }catch(e){ this._log(`End-Transmission-Hinweis: ${e.message}`); }
   }
 
-  /* -------- Hauptsynchronisation --------
-     existingRecords: Array aus state.readings (zur Duplikat-Erkennung)
+  /* -------- AFib-Synchronisation (Phase B/C/D/E nach OMRON_M7_AFib_PROTOCOL.md) --------
+     PHASE B: Init-Ping auf TX0 (08 00 00 00 00 10 00 18), erwartet ACK auf RX0 (08 80 ...)
+     PHASE C: EEPROM-Dump-Request auf TX0 (0c 03 00 04 60 00 00 00 90 00 00 fb)
+     PHASE D: ~157 Stream-Fragmente à 244 Bytes auf RX0 sammeln, bis 800ms Ruhe
+              Header strippen: erstes Fragment 6B, weitere 7B
+     PHASE E: Mess-Record im EEPROM-Blob finden (Signature: byte[3]=0x1A,
+              byte[12]=0x00, byte[13]=0x01) und dekodieren
      Rückgabe: { user1:[...], user2:[...], newCount, duplicateCount } */
   async syncAllRecords(existingRecords){
-    /* Data-Channels erst jetzt discovern (nach Pairing) */
-    await this._discoverDataChannels();
     this._setState('READING');
-    await this._startTransmission();
-    const users = [
-      { idx:1, start:OmronBleManager.EEP.USER1_START, out:[] },
-      { idx:2, start:OmronBleManager.EEP.USER2_START, out:[] }
-    ];
-    const total = 2 * OmronBleManager.EEP.MAX_RECS;
-    let done = 0;
-    let consecutiveErrors = 0;
-    const allParsed = [];
-    outer: for(const u of users){
-      for(let i=0; i<OmronBleManager.EEP.MAX_RECS; i++){
-        const addr = u.start + i * OmronBleManager.EEP.REC_SIZE;
-        try{
-          const bytes = await this._readBlock(addr);
-          const rec   = OmronBleManager.parseSingleRecord(bytes, u.idx);
-          if(rec){ u.out.push(rec); allParsed.push(rec); }
-          consecutiveErrors = 0;
-        }catch(e){
-          this._log(`Lesefehler @ 0x${addr.toString(16)}: ${e.message}`);
-          consecutiveErrors++;
-          /* Früher Abbruch: 5× hintereinander Read-Fehler → Diagnose statt
-             200× Spam. Verhindert auch endlose Notify-Timeouts. */
-          if(consecutiveErrors >= 5){
-            this._log('✗ 5× hintereinander EEPROM-Read-Fehler — Abbruch.');
-            this._log('Diagnose: Gerät antwortet zwar auf BLE-Connect, gibt aber keine');
-            this._log('EEPROM-Daten frei. Wahrscheinliche Ursachen:');
-            this._log('  • OMRON-Connect-Pairing-Key noch aktiv (Factory Reset nötig)');
-            this._log('  • AFib-Firmware mit Web Bluetooth + Android inkompatibel');
-            this._log('  • Encryption-Level-Mismatch (SC vs Legacy Pairing)');
-            this._log('Workaround: OMRON Connect App → CSV-Export → CSV-Import in dieser App.');
-            break outer;
-          }
-        }
-        done++;
-        this._progress({ done, total, phase:`Lese Block ${done} von ${total} (User ${u.idx})`, percent:(done/total)*100 });
+
+    /* TX0 (db5b55e0) und RX0 (49123040 — schon abonniert in connect) holen */
+    this._log('Lade TX0-Charakteristik (db5b55e0) …');
+    try{
+      this.txChars = this.txChars || [null, null, null, null];
+      this.txChars[0] = await this.service.getCharacteristic(OmronBleManager.UUID_TX[0]);
+      this._log('✓ TX0-Char bereit');
+    }catch(e){
+      throw new Error(`TX0-Char nicht zugänglich: ${e.message}`);
+    }
+
+    /* ─── PHASE B: Init-Ping ─── */
+    this._log('PHASE B — Init-Ping auf TX0 (08 00 00 00 00 10 00 18)');
+    this._streamMode = false;
+    this._rx0Fragments = [];
+    this._rx0LastTs = 0;
+    const pingPkt = new Uint8Array([0x08, 0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x18]);
+    this._log(`PING-TX: ${this._hex(pingPkt)}`);
+
+    /* Antwort kommt als RX0-Notification — wir nutzen kurz Stream-Modus */
+    this._streamMode = true;
+    this._rx0Fragments = [];
+    try{
+      await this.txChars[0].writeValueWithoutResponse(pingPkt);
+    }catch(e){
+      this._streamMode = false;
+      throw new Error(`PING-Write fehlgeschlagen: ${e.message}`);
+    }
+
+    /* Auf ACK warten (max 3s) */
+    const pingT0 = Date.now();
+    while(this._rx0Fragments.length === 0 && Date.now() - pingT0 < 3000){
+      await new Promise(r => setTimeout(r, 50));
+    }
+    this._streamMode = false;
+
+    if(this._rx0Fragments.length === 0){
+      throw new Error('Init-Ping ohne Antwort. Gerät reagiert nicht auf TX0.');
+    }
+    const pingResp = this._rx0Fragments[0];
+    this._log(`PING-RX: ${this._hex(pingResp)}`);
+    if(pingResp[0] !== 0x08 || pingResp[1] !== 0x80){
+      throw new Error(`Init-Ping ACK falsch: ${this._hex(pingResp.slice(0, 4))} (erwartet 08 80 …)`);
+    }
+    this._log('✓ PHASE B: Init-Ping bestätigt (08 80 …)');
+
+    /* ─── PHASE C: EEPROM-Dump-Request ─── */
+    this._log('PHASE C — EEPROM-Stream-Request auf TX0 (0c 03 …)');
+    this._streamMode = true;
+    this._rx0Fragments = [];
+    this._rx0LastTs = 0;
+
+    const dumpPkt = new Uint8Array([
+      0x0C, 0x03, 0x00, 0x04, 0x60, 0x00, 0x00, 0x00, 0x90, 0x00, 0x00, 0xFB
+    ]);
+    this._log(`DUMP-TX: ${this._hex(dumpPkt)}`);
+
+    try{
+      await this.txChars[0].writeValueWithoutResponse(dumpPkt);
+    }catch(e){
+      this._streamMode = false;
+      throw new Error(`DUMP-Write fehlgeschlagen: ${e.message}`);
+    }
+
+    /* ─── PHASE D: Stream-Fragmente sammeln ─── */
+    this._log('PHASE D — Sammle Fragmente (Stream ruht bei 800ms ohne neuen Frame, max 20s)');
+    const collectStart = Date.now();
+    let lastReported = 0;
+    while(Date.now() - collectStart < 20000){
+      await new Promise(r => setTimeout(r, 100));
+      /* Stream gilt als komplett, wenn 800ms keine neue Notification kam */
+      if(this._rx0Fragments.length > 0 && this._rx0LastTs > 0 &&
+         Date.now() - this._rx0LastTs > 800){
+        break;
+      }
+      /* Progress alle 500ms */
+      if(this._rx0Fragments.length !== lastReported &&
+         this._rx0Fragments.length % 20 === 0){
+        this._progress({ done: this._rx0Fragments.length, total: 157,
+          phase:`Stream-Empfang: ${this._rx0Fragments.length} Fragmente`,
+          percent: Math.min(95, (this._rx0Fragments.length / 157) * 100) });
+        lastReported = this._rx0Fragments.length;
       }
     }
-    await this._endTransmission();
-    this._setState('CONNECTED');
-    /* --- Duplikat-Erkennung innerhalb der Klasse (gemäss Spec) --- */
-    const keyFn = r => `${Math.floor(r.ts/60000)}-${r.sys}-${r.dia}-${r.bpm||r.pul}`;
-    const existingKeys = new Set((existingRecords || []).map(keyFn));
-    let duplicateCount = 0;
-    const user1Unique = [], user2Unique = [];
-    for(const rec of allParsed){
-      if(existingKeys.has(keyFn(rec))){ duplicateCount++; continue; }
-      existingKeys.add(keyFn(rec));
-      (rec.user === 2 ? user2Unique : user1Unique).push(rec);
+    this._streamMode = false;
+
+    const fragments = this._rx0Fragments.slice();
+    this._rx0Fragments = [];
+    this._log(`✓ PHASE D: ${fragments.length} Fragmente empfangen`);
+
+    if(fragments.length === 0){
+      throw new Error('Stream-Dump lieferte keine Fragmente. AFib-FW antwortet nicht auf 0c 03.');
     }
-    const newCount = user1Unique.length + user2Unique.length;
-    return { user1:user1Unique, user2:user2Unique, newCount, duplicateCount };
+
+    /* Transport-Header strippen — erstes Fragment 6B, alle weiteren 7B */
+    const eeprom = [];
+    fragments.forEach((frag, i) => {
+      const skip = (i === 0) ? 6 : 7;
+      for(let j = skip; j < frag.length; j++) eeprom.push(frag[j]);
+    });
+    this._log(`EEPROM-Blob zusammengebaut: ${eeprom.length} Bytes`);
+
+    /* ─── PHASE E: Mess-Record finden ─── */
+    this._log('PHASE E — Suche Mess-Record (Signature: byte[3]=0x1A, byte[12..13]=00 01)');
+    let recOff = -1;
+    for(let i = 0; i <= eeprom.length - 16; i++){
+      if(eeprom[i+3] === 0x1A && eeprom[i+12] === 0x00 && eeprom[i+13] === 0x01){
+        recOff = i;
+        break;
+      }
+    }
+
+    if(recOff < 0){
+      this._log('⚠ Kein Mess-Record im EEPROM-Blob gefunden.');
+      this._log('Erste 64 EEPROM-Bytes: ' + this._hex(new Uint8Array(eeprom.slice(0, 64))));
+      this._setState('CONNECTED');
+      return { user1:[], user2:[], newCount:0, duplicateCount:0 };
+    }
+
+    const rec16 = eeprom.slice(recOff, recOff + 16);
+    this._log(`Record @ Offset 0x${recOff.toString(16)}: ${this._hex(new Uint8Array(rec16))}`);
+
+    /* Dekodieren gemäss Protokoll-Doku (verifiziert mit 124/83/67) */
+    const sys  = (rec16[6] + rec16[7]) & 0xFF;
+    const dia  = (rec16[8] * 4 - 1) & 0xFF;
+    const puls = rec16[2];
+    const seq  = rec16[10] | (rec16[11] << 8);
+    const year = 2000 + rec16[3];
+    const userId = (rec16[4] << 8) | rec16[5];
+
+    this._log(`Dekodiert: SYS=${sys}, DIA=${dia}, PUL=${puls}, SEQ=${seq}, Jahr=${year}, UserID=0x${userId.toString(16)}`);
+
+    /* Plausibilitäts-Check */
+    if(sys < 50 || sys > 260 || dia < 30 || dia > 200 || puls < 30 || puls > 220){
+      this._log(`⚠ Werte unplausibel (SYS ${sys} / DIA ${dia} / PUL ${puls}) — Record verworfen`);
+      this._setState('CONNECTED');
+      return { user1:[], user2:[], newCount:0, duplicateCount:0 };
+    }
+
+    /* AFib-Protokoll liefert in diesem Dump-Bereich nur die LETZTE Messung.
+       Datum ist nur teilweise dekodierbar (Jahr ja, Monat/Tag/Zeit unbekannt).
+       Wir nehmen den aktuellen Zeitstempel als Approximation. */
+    const datetime = new Date();
+    const measurement = {
+      datetime, ts: datetime.getTime(),
+      sys, dia, bpm: puls,
+      mov: false, ihb: false,
+      user: 1,   // User-ID-zu-User-Index-Mapping unbekannt → fix auf 1
+      seq, year
+    };
+
+    /* Duplikat-Erkennung via Seq-Nr (eindeutig pro Messung) */
+    const existingSeqs = new Set();
+    (existingRecords || []).forEach(r => { if(r.seq !== undefined) existingSeqs.add(r.seq); });
+
+    let newCount = 0, duplicateCount = 0;
+    if(existingSeqs.has(seq)){
+      duplicateCount = 1;
+      this._log(`Messung mit Seq ${seq} bereits in Datenbank → übersprungen`);
+    } else {
+      newCount = 1;
+      this._log(`✓ Neue Messung: SYS ${sys} / DIA ${dia} / PUL ${puls}`);
+    }
+
+    this._setState('CONNECTED');
+    return {
+      user1: newCount === 1 ? [measurement] : [],
+      user2: [],
+      newCount,
+      duplicateCount
+    };
   }
 
   /* -------- Parse 16-Byte-Record (BigInt, MSB-Bit-Index) --------
