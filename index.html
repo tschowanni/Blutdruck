@@ -86,7 +86,7 @@
        • CDN-Libs   ⇒ CACHE-FIRST (statische Versions-URLs ändern sich nie)
      Cache-Name bumped auf v3 nach Bug-Fix für Notify-Hang. */
   const swCode = [
-    "const CACHE_NAME = 'omron-bp-v7';",
+    "const CACHE_NAME = 'omron-bp-v8';",
     "const CACHE_URLS = [",
     "  './',",
     "  './index.html',",
@@ -738,7 +738,7 @@
       </svg>
       <p style="margin:0 0 4px;font-weight:600;color:var(--text);font-size:.94rem">OMRON M7 Blutdruck</p>
       <p style="margin:0 0 8px">für OMRON M7 Intelli IT (HEM-7361T).<br>Läuft lokal &mdash; alle Daten bleiben auf diesem Gerät.<br><span id="pwa-status" style="color:var(--text-3);font-size:.75rem"></span></p>
-      <p style="margin:0;color:var(--text-3);font-size:.75rem">Version 2.2-AFib · Build 2026-05-15-a · <span id="storage-info">—</span></p>
+      <p style="margin:0;color:var(--text-3);font-size:.75rem">Version 2.2-AFib · Build 2026-05-15-b · <span id="storage-info">—</span></p>
       <p style="margin:6px 0 0;font-size:.7rem">
         <button id="btn-force-refresh" style="background:none;border:1px solid var(--text-3);color:var(--text-3);padding:4px 10px;border-radius:6px;cursor:pointer;font-size:.7rem">⟳ App-Cache leeren &amp; neu laden</button>
       </p>
@@ -2041,9 +2041,14 @@ class OmronBleManager {
     this._log(`AFib-UNLOCK — Nonce: ${this._hex(nonce)}`);
     this._log(`UNLOCK-TX (writeWithoutResponse): ${this._hex(pkt)}`);
 
+    /* Bond-Stabilisierungs-Pause — im OMRON-Connect-Trace liegen ~700ms
+       zwischen CCCD-Setup und erstem Unlock-Write. */
+    await new Promise(r => setTimeout(r, 700));
+
     /* Antwort-Wartepromise vorbereiten — Auflösung kommt aus dem
-       Unlock-Notify-Handler (in connect() registriert) bei 0x91-Frame */
-    const waitResp = this._waitUnlockResponse(5000);
+       Unlock-Notify-Handler (in connect() registriert) bei 0x91-Frame.
+       Nur 2.5s warten, dann Read-Polling als Fallback. */
+    const waitResp = this._waitUnlockResponse(2500);
 
     /* WriteWithoutResponse wie im echten OMRON-Connect-Protokoll */
     try{
@@ -2065,16 +2070,66 @@ class OmronBleManager {
       throw new Error(`Unlock-Write fehlgeschlagen: ${wErr.message}`);
     }
 
-    /* Antwort auf Unlock-Char abwarten (5s) */
-    let resp;
-    try{
-      resp = await waitResp;
-    }catch(notifyErr){
-      throw new Error(`Keine AFib-Unlock-Antwort innerhalb 5s.\n\n` +
-                      `Mögliche Ursachen:\n` +
-                      `1. CCCD-Notify auf Unlock-Char konnte nicht aktiviert werden (BLE-Stack)\n` +
-                      `2. Gerät nicht im "-P-"-Modus\n` +
-                      `3. AFib-Firmware blockt Web-Bluetooth-Encryption`);
+    /* Antwort suchen — zwei Pfade:
+       A) Notify-Pfad (wenn Unlock-CCCD-Write erfolgreich war)
+       B) Read-Pfad (Unlock-Char hat READ-Property, polling alle 250ms) */
+    let resp = null;
+    if(this._unlockNotifyActive){
+      try{
+        resp = await waitResp;
+        this._log('UNLOCK-Antwort via Notify empfangen');
+      }catch(notifyErr){
+        this._log(`Notify-Pfad: ${notifyErr.message} — wechsle auf Read-Polling`);
+      }
+    } else {
+      /* Notify konnte nicht aktiviert werden — Read-Polling ist einzige Option */
+      this._log('Notify nicht aktiv — direkt Read-Polling auf Unlock-Char');
+    }
+
+    /* Read-Polling-Fallback: Unlock-Char hat READ-Property, also probieren
+       wir die Antwort per readValue() abzuholen. Auf manchen Firmwares
+       wird der Char-Wert nach dem Write mit der Antwort gefüllt und kann
+       gelesen werden, auch wenn CCCD-Notify nicht funktioniert. */
+    if(!resp){
+      this._log('Read-Polling auf Unlock-Char (8× à 300ms) …');
+      let lastErr = null;
+      for(let attempt = 1; attempt <= 8; attempt++){
+        await new Promise(r => setTimeout(r, 300));
+        try{
+          const readPromise = this.unlockChar.readValue();
+          const dv = await Promise.race([
+            readPromise,
+            new Promise((_, rej) => setTimeout(() => rej(new Error('readValue Timeout 1.5s')), 1500))
+          ]);
+          const bytes = new Uint8Array(dv.buffer.slice(dv.byteOffset, dv.byteOffset + dv.byteLength));
+          this._log(`UNLOCK-READ ${attempt}: ${this._hex(bytes)}`);
+          if(bytes.length >= 6 && bytes[0] === 0x91){
+            resp = bytes;
+            this._log('  → AFib-Response-Marker 0x91 erkannt');
+            break;
+          }
+        }catch(rdErr){
+          lastErr = rdErr;
+          this._log(`UNLOCK-READ ${attempt} ✗: ${rdErr.message}`);
+        }
+      }
+      /* Pending-Promise aufräumen, falls noch aktiv */
+      if(this._unlockPending){
+        const {timer} = this._unlockPending;
+        this._unlockPending = null;
+        clearTimeout(timer);
+      }
+    }
+
+    if(!resp){
+      throw new Error(`Keine AFib-Unlock-Antwort (Notify + Read-Polling erschöpft).\n\n` +
+                      `Diagnose:\n` +
+                      `• CCCD-Notify auf Unlock-Char: ${this._unlockNotifyActive ? 'aktiv' : 'BLOCKIERT'}\n` +
+                      `• Read-Polling lieferte keine 0x91-Antwort\n\n` +
+                      `Web Bluetooth kann diese AFib-Firmware nicht ansprechen.\n` +
+                      `Workarounds:\n` +
+                      `1. Native Android-App via B4A (in Arbeit)\n` +
+                      `2. OMRON Connect → CSV-Export → CSV-Import hier`);
     }
 
     this._log(`UNLOCK-RX: ${this._hex(resp)}`);
